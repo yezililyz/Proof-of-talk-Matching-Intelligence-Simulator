@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Result Simulator — XVenture Matching</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#08080e;--s1:#0f0f1a;--s2:#16162a;--bd:#1e1e38;
+  --green:#00e5a0;--purple:#6c63ff;--red:#ff6b6b;--amber:#f5a623;--blue:#38bdf8;
+  --text:#e2e2f0;--mid:#8888aa;--dim:#4a4a6a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,229,160,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,160,.02) 1px,transparent 1px);background-size:44px 44px;pointer-events:none;z-index:0}
+.w{position:relative;z-index:1;max-width:1260px;margin:0 auto;padding:0 24px}
+
+/* ANNOTATION BANNER */
+.annot{background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.25);border-radius:8px;padding:14px 20px;margin-bottom:28px;font-size:13px;color:var(--text);line-height:1.6}
+.annot a{color:var(--green);text-decoration:underline;font-weight:600}
+.annot a:hover{color:var(--blue)}
+
+/* SECTION */
+.slbl{font-size:10px;letter-spacing:.2em;color:var(--green);text-transform:uppercase;margin-bottom:6px}
+.stitle{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;margin-bottom:8px}
+.sdesc{font-size:12px;color:var(--mid);line-height:1.75;max-width:740px;margin-bottom:28px}
+
+/* SIMULATOR */
+.sim-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+.sbtn{font-family:'DM Mono',monospace;font-size:11px;padding:8px 14px;border:1px solid var(--bd);background:var(--s1);color:var(--mid);border-radius:8px;cursor:pointer;transition:all .2s;letter-spacing:.06em}
+.sbtn:hover{border-color:var(--purple);color:var(--text)}
+.sbtn.on{border-color:var(--green);color:var(--green);background:rgba(0,229,160,.07)}
+
+.bkt-hdr{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:7px 0 9px;border-bottom:1px solid var(--bd);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.new-tag{font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(56,189,248,.12);color:var(--blue);border:1px solid rgba(56,189,248,.3)}
+
+.mrow{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:13px 15px;margin-bottom:8px;cursor:pointer;transition:border-color .2s}
+.mrow:hover{border-color:var(--purple)}
+.mrow-top{display:grid;grid-template-columns:155px 1fr 50px 42px;gap:12px;align-items:center}
+@media(max-width:640px){.mrow-top{grid-template-columns:1fr 50px 42px}}
+.mname{font-family:'Syne',sans-serif;font-size:13px;font-weight:700}
+.mrole{font-size:10px;color:var(--dim);margin-top:2px}
+.sbars{display:flex;flex-direction:column;gap:5px}
+@media(max-width:640px){.sbars{display:none}}
+.srow{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim)}
+.slbl2{min-width:76px}
+.sbar{flex:1;height:4px;background:var(--bd);border-radius:2px;overflow:hidden;min-width:50px}
+.sfill{height:100%;border-radius:2px;transition:width .6s ease}
+.sval{min-width:30px;text-align:right}
+.rscore{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;text-align:center}
+.bbdg{font-size:10px;font-weight:700;padding:4px 8px;border-radius:4px;font-family:'Syne',sans-serif;text-align:center}
+.bP1{background:rgba(0,229,160,.12);color:var(--green);border:1px solid rgba(0,229,160,.25)}
+.bPILOT{background:rgba(56,189,248,.12);color:var(--blue);border:1px solid rgba(56,189,248,.25)}
+.bP2{background:rgba(108,99,255,.12);color:var(--purple);border:1px solid rgba(108,99,255,.25)}
+.bP3{background:rgba(245,166,35,.12);color:var(--amber);border:1px solid rgba(245,166,35,.25)}
+
+.expand{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)}
+.mrow.open .expand{display:block}
+.exp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px;color:var(--mid);line-height:1.65}
+.exp-grid h5{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--text);margin-bottom:5px}
+@media(max-width:640px){.exp-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="w">
+  <div class="annot">
+    Refer to this page <a href="https://yezililyz.github.io/Proof-of-talk-Matching-Intelligence/" target="_blank" rel="noopener">https://yezililyz.github.io/Proof-of-talk-Matching-Intelligence/</a> to see the matching intelligence explanation.
+  </div>
+
+  <div class="slbl">Live Match Simulator</div>
+  <div class="stitle">Select Attendee &rarr; See Ranked Shortlist</div>
+  <p class="sdesc">Choose a primary attendee to generate their ranked shortlist. Bucketed by P1 / PILOT / P2 / P3. Click any row to expand the scoring breakdown.</p>
+  <div class="sim-bar" id="sim-bar"></div>
+  <div id="sim-out"></div>
+</div>
+
+<script>
+// ===================================================
+// DATA
+// ===================================================
+var PERSONAS = [
+  { id:'P1', name:'Amara K.', role:'SWF Allocator', org:'Abu Dhabi SWF', type:'investor', color:'#00e5a0',
+    stats:[['AUM','$200M earmarked RWA'],['Stage focus','Series B+'],['Mandate','Deploy into RWA and infra'],['Deal-readiness','High, actively deploying']],
+    looking:'Highly filtered institutional-grade infra founders, co-investors, regulatory intelligence for de-risking',
+    signals:'Fund vintage, check size match, thesis alignment, GP track record in vertical, portfolio quality',
+    decisions:'Allocate capital to RWA infra, identify co-investment GPs, de-risk thesis via regulatory insight' },
+  { id:'P2', name:'Marcus T.', role:'Founder / CEO', org:'VaultBridge Series B', type:'founder', color:'#6c63ff',
+    stats:[['Stage','Series B ($40M raised)'],['Clients','Live with European banks'],['Mandate','Strategic capital + sandbox pilots'],['Deal-readiness','High, open to SWF and growth VC']],
+    looking:'Strategic investors (SWFs, growth VCs), regulatory sandbox access, infra integration partners',
+    signals:'Institutional traction, audited contracts, bank clients, live product, clear round parameters',
+    decisions:'Choose investors and partners, engage regulators for CBDC pilots, build infra ecosystem' },
+  { id:'P3', name:'Elena S.', role:'GP / Fund Manager', org:'$500M TradFi-DeFi VC', type:'investor', color:'#00e5a0',
+    stats:[['AUM','$500M, infra/TradFi-DeFi'],['Stage focus','Series A-B'],['Mandate','Actively deploying in infra vertical'],['Deal-readiness','High, top of pipeline needed']],
+    looking:'On-thesis founders, LP/allocator relationships, co-investors, regulatory intelligence for portfolio',
+    signals:'Founder quality, portfolio fit, token vs equity model, follow-on capacity, institutional traction',
+    decisions:'Add to active pipeline, introduce portfolio companies, co-invest with allocators like Amara' },
+  { id:'P4', name:'James W.', role:'Co-founder / CTO', org:'NexaLayer L2', type:'founder', color:'#ff6b6b',
+    stats:[['Stage','Series A range'],['Focus','Compliance-first L2 for institutions'],['Mandate','Investor + regulatory sandbox'],['Deal-readiness','High for pilots; raising is secondary']],
+    looking:'Series A investor with infra thesis, regulatory sandbox access (CBDC/MiCA), infra integration partner',
+    signals:'Compliance modules, MiCA-alignment, institutional customer pipeline, audited code, live testnet',
+    decisions:'Choose lead investor, engage regulator pilots, partner with custody/settlement infra' },
+  { id:'P5', name:'Sophie M.', role:'Policy Lead', org:'Deutsche Bundesbank', type:'regulator', color:'#f5a623',
+    stats:[['Institution','Central Bank (G7)'],['Mandate','CBDC and MiCA implementation'],['Seeking','Sandbox participants, infra partners'],['Deal-readiness','High for pilots, zero for capital']],
+    looking:'Compliance-first builders, compliance-ready products, systemic risk intelligence from large allocators',
+    signals:'Regulatory compliance posture, governance quality, KYC/AML, sandbox eligibility, MiCA readiness',
+    decisions:'Select sandbox participants, inform MiCA guidance, understand systemic exposure through infra' }
+];
+
+var IDS = ['P1','P2','P3','P4','P5'];
+var NAMES = {P1:'Amara',P2:'Marcus',P3:'Elena',P4:'James',P5:'Sophie'};
+
+var MS_DATA = {
+  P1:{P2:0.95,P3:0.90,P4:0.70,P5:0.60},
+  P2:{P1:0.95,P3:0.95,P4:0.70,P5:0.60},
+  P3:{P1:0.90,P2:0.95,P4:0.95,P5:0.65},
+  P4:{P1:0.70,P2:0.70,P3:0.95,P5:0.90},
+  P5:{P1:0.60,P2:0.60,P3:0.65,P4:0.90}
+};
+
+var FR_DATA = {
+  P1:{P2:0.90,P3:0.90,P4:0.55,P5:0.10},
+  P2:{P1:0.90,P3:0.90,P4:0.50,P5:0.15},
+  P3:{P1:0.90,P2:0.90,P4:0.90,P5:0.15},
+  P4:{P1:0.55,P2:0.50,P3:0.90,P5:0.10},
+  P5:{P1:0.10,P2:0.15,P3:0.15,P4:0.10}
+};
+
+var OR_DATA = {
+  P1:{P2:0.70,P3:0.65,P4:0.70,P5:0.35},
+  P2:{P1:0.70,P3:0.70,P4:0.75,P5:0.65},
+  P3:{P1:0.65,P2:0.70,P4:0.75,P5:0.40},
+  P4:{P1:0.70,P2:0.75,P3:0.75,P5:0.85},
+  P5:{P1:0.35,P2:0.65,P3:0.40,P4:0.85}
+};
+
+var MATCH_RAT = {
+  'P1-P2':'Amara deploys $200M into RWA/infra; Marcus is Series B custody/settlement live with European banks. Direct complementarity.',
+  'P1-P3':'LP/GP co-investment. Elena actively deploys into infra matching Amara\'s mandate with strong co-invest potential.',
+  'P1-P4':'NexaLayer compliance L2 is future infrastructure for Amara\'s institutional DeFi thesis. Strategic rails.',
+  'P1-P5':'Sophie\'s regulatory perspective on RWA and tokenization is strategic intelligence for Amara.',
+  'P2-P3':'Ideal VC-founder fit. Elena\'s fund is on-thesis for TradFi-DeFi infra at Series B with clear follow-on capacity.',
+  'P2-P4':'Non-obvious: L2 and custody/settlement solve complementary problems for the same institutional client base.',
+  'P2-P5':'VaultBridge custody/settlement infra informs CBDC and tokenized securities architecture.',
+  'P3-P4':'Extremely strong. NexaLayer is precisely the TradFi-DeFi infra intersection Elena invests in.',
+  'P3-P5':'Policy intelligence for portfolio de-risking. Sophie gets a picture of infra bets shaping the market.',
+  'P4-P5':'Direct sandbox fit. Sophie runs CBDC/MiCA experiments; James has a compliance-first L2 purpose-built for this.'
+};
+
+var FIN_RAT = {
+  'P1-P2':'Both actively transacting: Amara has $200M to deploy; Marcus is Series B open to SWF investors.',
+  'P1-P3':'LP/GP with high mutual readiness: Amara allocates to funds; Elena is actively deploying in-vertical.',
+  'P1-P4':'Moderate: James may seek strategic capital but immediate SWF allocation is less clear. More pilot-first.',
+  'P1-P5':'Near-zero: central bank vs capital allocator. No financial transaction in 12-18 month horizon.',
+  'P2-P3':'Both ready: Marcus at $40M Series B target; Elena has capital at this stage and thesis.',
+  'P2-P4':'Low: infra partnership potential but no imminent capital round between two founders.',
+  'P2-P5':'Near-zero for equity or revenue: central bank does not deploy commercial capital.',
+  'P3-P4':'High: if James is raising at Elena\'s stage and check size, this is P1 capital territory.',
+  'P3-P5':'Near-zero: Elena deploys capital; Sophie does not. No financial deal.',
+  'P4-P5':'Effectively zero: CBDC sandbox pilot is not a financial transaction.'
+};
+
+var OPS_RAT = {
+  'P1-P2':'High: Amara can pilot VaultBridge custody as infrastructure for tokenized asset management.',
+  'P1-P3':'Medium: fund partnership and strategic alliance is an operational relationship beyond equity.',
+  'P1-P4':'High: Amara can integrate NexaLayer compliance L2 as rails for institutional DeFi allocations.',
+  'P1-P5':'Low: SWF and central bank overlap is strategic dialogue, not concrete operational collaboration.',
+  'P2-P3':'High: Elena\'s portfolio companies could partner with VaultBridge for custody services.',
+  'P2-P4':'High: L2 and custody stack integration is a concrete technical partnership. Both have live products.',
+  'P2-P5':'High: VaultBridge can participate in Bundesbank CBDC and tokenized securities pilots. Live infrastructure match.',
+  'P3-P4':'High: Elena portfolio companies could build on NexaLayer. Portfolio advisory beyond equity.',
+  'P3-P5':'Medium: Sophie wants portfolio-level systemic risk intelligence from a leading infrastructure fund.',
+  'P4-P5':'Very high: Both actively seeking sandbox engagement. NexaLayer is purpose-built for MiCA compliance.'
+};
+
+// ===================================================
+// UTILS
+// ===================================================
+function sc(v) {
+  if (v >= 0.85) return '#00e5a0';
+  if (v >= 0.65) return '#6c63ff';
+  if (v >= 0.40) return '#f5a623';
+  return '#ff6b6b';
+}
+
+function bucket(ms, fr, ops) {
+  if (ms >= 0.70 && fr >= 0.70) return 'P1';
+  if (ms >= 0.70 && ops >= 0.65 && fr < 0.70) return 'PILOT';
+  if (ms >= 0.65 && Math.max(fr, ops) >= 0.40) return 'P2';
+  if (ms >= 0.40) return 'P3';
+  return 'P3';
+}
+
+function rankScore(ptype, ms, fr_cp, ops_cp, fr_s, ops_s) {
+  var cfg = {investor:{a:0.60,b:0.05,g:'fin'}, founder:{a:0.50,b:0.10,g:'max'}, regulator:{a:0.20,b:0.05,g:'ops'}};
+  var c = cfg[ptype] || cfg.founder;
+  var dr_cp = c.g === 'fin' ? fr_cp : c.g === 'ops' ? ops_cp : Math.max(fr_cp, ops_cp);
+  var dr_s  = c.g === 'fin' ? fr_s  : c.g === 'ops' ? ops_s  : Math.max(fr_s, ops_s);
+  return ms * (1 + c.a * dr_cp + c.b * dr_s);
+}
+
+function pairKey(a, b) {
+  var arr = [a, b].sort();
+  return arr[0] + '-' + arr[1];
+}
+
+// ===================================================
+// RENDER: SIMULATOR
+// ===================================================
+function renderSimBar() {
+  document.getElementById('sim-bar').innerHTML = PERSONAS.map(function(p) {
+    return '<button class="sbtn" id="sb-' + p.id + '" onclick="runSim(\'' + p.id + '\')">' + p.id + '&middot;' + p.name.split(' ')[0] + '</button>';
+  }).join('');
+}
+
+function runSim(id) {
+  document.querySelectorAll('.sbtn').forEach(function(b){ b.classList.remove('on'); });
+  var btn = document.getElementById('sb-' + id);
+  if (btn) btn.classList.add('on');
+
+  var primary = PERSONAS.find(function(p){ return p.id === id; });
+  var ptype = primary.type;
+
+  var candidates = PERSONAS.filter(function(p){ return p.id !== id; }).map(function(c) {
+    var ms   = (MS_DATA[id] && MS_DATA[id][c.id]) ? MS_DATA[id][c.id] : 0;
+    var fr_cp = (FR_DATA[id] && FR_DATA[id][c.id]) ? FR_DATA[id][c.id] : 0;
+    var ops_cp = (OR_DATA[id] && OR_DATA[id][c.id]) ? OR_DATA[id][c.id] : 0;
+    var fr_s  = (FR_DATA[c.id] && FR_DATA[c.id][id]) ? FR_DATA[c.id][id] : 0;
+    var ops_s  = (OR_DATA[c.id] && OR_DATA[c.id][id]) ? OR_DATA[c.id][id] : 0;
+    var rs = rankScore(ptype, ms, fr_cp, ops_cp, fr_s, ops_s);
+    var bkt = bucket(ms, fr_cp, ops_cp);
+    var k = pairKey(id, c.id);
+    return { p:c, ms:ms, fr:fr_cp, ops:ops_cp, rs:rs, bkt:bkt, k:k };
+  });
+  candidates.sort(function(a,b){ return b.rs - a.rs; });
+
+  var ORDER = ['P1','PILOT','P2','P3'];
+  var LABELS = {
+    P1:'P1 &bull; Priority Capital Meetings &mdash; Schedule at the Louvre',
+    PILOT:'PILOT &bull; Sandbox &amp; Operational Track',
+    P2:'P2 &bull; Strategic &amp; Non-obvious',
+    P3:'P3 &bull; Future Pipeline'
+  };
+  var BCOLORS = {P1:'var(--green)',PILOT:'var(--blue)',P2:'var(--purple)',P3:'var(--amber)'};
+
+  var groups = {P1:[],PILOT:[],P2:[],P3:[]};
+  candidates.forEach(function(c){ if (groups[c.bkt]) groups[c.bkt].push(c); });
+
+  var cfgLabel = {investor:'&alpha;=0.60 &beta;=0.05 &gamma;=fin', founder:'&alpha;=0.50 &beta;=0.10 &gamma;=max', regulator:'&alpha;=0.20 &beta;=0.05 &gamma;=ops'};
+  var html = '<div style="font-size:12px;color:var(--mid);margin-bottom:18px">Shortlist for <strong style="color:' + primary.color + '">' + id + '&bull;' + primary.name + '</strong> (' + primary.type + ') &mdash; ' + (cfgLabel[ptype] || '') + '</div>';
+
+  ORDER.forEach(function(bkt) {
+    if (!groups[bkt] || !groups[bkt].length) return;
+    html += '<div style="margin-bottom:20px"><div class="bkt-hdr" style="color:' + BCOLORS[bkt] + '">' + LABELS[bkt];
+    if (bkt === 'PILOT') html += ' <span class="new-tag">NEW BUCKET</span>';
+    html += '</div>';
+
+    groups[bkt].forEach(function(c) {
+      var msC = sc(c.ms), frC = sc(c.fr), opsC = sc(c.ops), rsC = sc(c.rs/1.6);
+      var matchExp  = MATCH_RAT[c.k] || '';
+      var finExp    = FIN_RAT[c.k]   || '';
+      var opsExp    = OPS_RAT[c.k]   || '';
+      html += '<div class="mrow" id="mr-' + id + '-' + c.p.id + '" onclick="togRow(\'' + id + '-' + c.p.id + '\')">' +
+        '<div class="mrow-top">' +
+        '<div><div class="mname" style="color:' + c.p.color + '">' + c.p.id + '&bull;' + c.p.name + '</div><div class="mrole">' + c.p.role + '</div></div>' +
+        '<div class="sbars">' +
+        '<div class="srow"><span class="slbl2">MatchScore</span><div class="sbar"><div class="sfill" style="width:' + (c.ms*100) + '%;background:' + msC + '"></div></div><div class="sval" style="color:' + msC + '">' + c.ms.toFixed(2) + '</div></div>' +
+        '<div class="srow"><span class="slbl2">FinancialReady</span><div class="sbar"><div class="sfill" style="width:' + (c.fr*100) + '%;background:' + frC + '"></div></div><div class="sval" style="color:' + frC + '">' + c.fr.toFixed(2) + '</div></div>' +
+        '<div class="srow"><span class="slbl2">OpsReady</span><div class="sbar"><div class="sfill" style="width:' + (c.ops*100) + '%;background:' + opsC + '"></div></div><div class="sval" style="color:' + opsC + '">' + c.ops.toFixed(2) + '</div></div>' +
+        '</div>' +
+        '<div class="rscore" style="color:' + rsC + '">' + c.rs.toFixed(2) + '</div>' +
+        '<div class="bbdg b' + bkt + '">' + bkt + '</div>' +
+        '</div>' +
+        '<div class="expand">' +
+        '<div class="exp-grid">' +
+        '<div><h5>Why meet</h5><p>' + matchExp + '</p></div>' +
+        '<div><h5>Financial signal</h5><p>' + finExp + '</p></div>' +
+        '<div><h5>Operational signal</h5><p>' + opsExp + '</p></div>' +
+        '</div></div></div>';
+    });
+    html += '</div>';
+  });
+
+  document.getElementById('sim-out').innerHTML = html;
+}
+
+function togRow(key) {
+  var el = document.getElementById('mr-' + key);
+  if (el) el.classList.toggle('open');
+}
+
+// ===================================================
+// INIT
+// ===================================================
+document.addEventListener('DOMContentLoaded', function() {
+  renderSimBar();
+  runSim('P4');
+});
+</script>
+</body>
+</html>
