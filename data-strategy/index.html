@@ -1,0 +1,288 @@
+
+    card = json.loads(raw)
+    _validate_card(card)
+    return card
+          </pre>
+        </div>
+      </div>
+      <div>
+        <div class="sub-label">Output schema + constraints</div>
+        <div class="field-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Constraint</th>
+                <th>Bucket rule</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">meeting_type_badge</td>
+                <td>One of 4 values</td>
+                <td>P1→capital, PILOT→sandbox, P2→strategic, P3→warm</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">match_insight_headline</td>
+                <td>≤52 chars</td>
+                <td>Concrete nouns, no hype</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">counterparty_one_liner</td>
+                <td>≤120 chars</td>
+                <td>Facts only, no inferences</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">proof_chips</td>
+                <td>Exactly 3, ≤24 chars</td>
+                <td>Must appear in evidence</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">why_this_matters</td>
+                <td>≤260 chars</td>
+                <td>Viewer mandate + CP evidence</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">key_points</td>
+                <td>Exactly 3, ≤110 chars</td>
+                <td>You… → They… structure</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">suggested_opener</td>
+                <td>≤120 chars</td>
+                <td>Actionable question</td>
+              </tr>
+              <tr>
+                <td style="color:var(--det);font-family:'DM Mono',monospace;">cta_hint</td>
+                <td>"Plan a meeting" or "Exchange details"</td>
+                <td>Derived from bucket default</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE PREVIEW -->
+    <div class="card-preview-title">Live Output Preview</div>
+    <div class="scenario-tabs">
+      <button class="scenario-btn active" id="scenario-p1" onclick="setScenario('p1')">
+        P1 — capital meeting
+      </button>
+      <button class="scenario-btn" id="scenario-pilot" onclick="setScenario('pilot')">
+        PILOT — sandbox meeting
+      </button>
+    </div>
+
+    <div class="two-col">
+      <!-- Payload JSON (read-only) -->
+      <div>
+        <div class="sub-label">Agent 5 payload (input to Agent 6)</div>
+        <div class="code-shell" style="max-height:460px;overflow-y:auto;">
+          <div class="code-shell-header">
+            <div class="code-shell-lang">json</div>
+            <div class="code-shell-dots">
+              <span style="background:#ff6b6b;"></span>
+              <span style="background:#f5a623;"></span>
+              <span style="background:#00e5a0;"></span>
+            </div>
+          </div>
+          <pre id="payload-json" class="code-shell-pre"></pre>
+        </div>
+      </div>
+
+      <!-- Match card -->
+      <div>
+        <div class="sub-label">Agent 6 output → rendered match card</div>
+        <div class="match-card" id="match-card">
+          <!-- Filled by JS -->
+        </div>
+        <div class="json-toggle">
+          <button id="json-toggle-btn" onclick="toggleRawJson()">▼ show raw JSON output</button>
+          <div id="json-panel" class="json-panel" style="display:none;">
+            <pre id="raw-json-pre"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- POC vs production -->
+    <div class="section-title" style="font-size:14px;margin:22px 0 8px;">POC vs Production</div>
+    <div class="poc-prod" id="poc-prod">
+      <div class="poc-prod-header">
+        <button class="poc-tab active" id="poc-tab-poc" onclick="setPocTab('poc')">🧪 POC</button>
+        <button class="poc-tab" id="poc-tab-prod" onclick="setPocTab('prod')">🏭 Production</button>
+      </div>
+      <div class="poc-body" id="poc-body">
+        Run Agent 5 (context builder) + Agent 6 (LLM) synchronously after bucket assignment. One LLM call per pair, ~600–800 tokens.
+        Filter to scored pairs only (MatchScore ≥ 0.40). Store output in a <code>match_cards</code> table with
+        <code>viewer_id, counterparty_id, bucket, card_json, generated_at</code>. Serve directly from the Proof of Match app without
+        real-time LLM calls.
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong style="color:var(--comp);">Branding note:</strong> All attendee-facing language, including match cards and CTAs, should reference
+      the product as <strong style="color:var(--text);">Proof of Match</strong>. Internal agent names (Agent 1–6) remain implementation details and
+      are never surfaced in the UI.
+    </div>
+  </main>
+
+  <script>
+    // --- Simple behavior: scroll + prompt tab + scenario + JSON toggles ---
+
+    function scrollToSection(id){
+      const el = document.getElementById(id);
+      if(el){ el.scrollIntoView({behavior:'smooth',block:'start'}); }
+    }
+
+    function setPromptTab(which){
+      document.getElementById('prompt-tab-simplified').classList.toggle('active', which==='simplified');
+      document.getElementById('prompt-tab-full').classList.toggle('active', which==='full');
+      document.getElementById('prompt-simplified').style.display = which==='simplified' ? 'block' : 'none';
+      document.getElementById('prompt-full').style.display = which==='full' ? 'block' : 'none';
+    }
+
+    const LIVE_EXAMPLE = {
+      viewer:{
+        name:"Amara K.",persona_type:"investor",
+        mandate_summary:"Deploying $200M earmarked for RWA and infrastructure. Fund vintage 2021, peak deployment window. Check size Series B+.",
+        primary_intent:"Deploy $200M into RWA and infrastructure at Series B+",
+        tags:["RWA","institutional-DeFi","infra","custody","Series-B+"],
+        readiness_signals:["Actively deploying","Fund vintage 2021 open","Check size defined"]
+      },
+      counterparty:{
+        name:"Marcus T.",persona_type:"founder",
+        mandate_summary:"Series B custody and settlement infrastructure live with European banks. $40M raised. Seeking strategic capital from SWF/growth VC.",
+        primary_intent:"Raise strategic capital from SWF and growth VCs, $40M Series B",
+        tags:["custody","settlement","RWA","institutional","European-banks","TradFi","infra"],
+        traction_evidence:["Live with 2 European banks","$40M raised","Audited contracts (Trail of Bits)"],
+        readiness_signals:["Actively raising","Series B open","SWF-qualified"]
+      },
+      bucket:"P1",
+      top_contributors:["Deploy capital ↔ raise capital","RWA custody + settlement overlap","Series B+ stage match","European bank traction"],
+      evidence_snippets:["VaultBridge is live with 2 European banks","$40M raised to date","Trail of Bits audit completed","Actively raising $40M Series B from SWF/growth VC"]
+    };
+
+    const PILOT_EXAMPLE = {
+      viewer:{
+        name:"Amara K.",persona_type:"investor",
+        mandate_summary:"Deploying $200M earmarked for RWA and infrastructure. Fund vintage 2021.",
+        primary_intent:"Deploy $200M into RWA and infrastructure at Series B+",
+        tags:["RWA","institutional-DeFi","infra","custody","Series-B+"],
+        readiness_signals:["Actively deploying","Fund vintage 2021 open"]
+      },
+      counterparty:{
+        name:"James W.",persona_type:"founder",
+        mandate_summary:"Enterprise-grade L2 with built-in compliance modules targeting regulated financial institutions. Seeking banks and asset managers to pilot.",
+        primary_intent:"Find banks and asset managers to pilot NexaLayer compliance L2. Capital is secondary.",
+        tags:["L2","compliance","KYC","AML","MiCA","CBDC","institutional","infra"],
+        traction_evidence:["Live testnet with compliance modules","MiCA-aligned","Audited code"],
+        readiness_signals:["Seeking pilots","Sandbox-ready","Compliance modules shipped"]
+      },
+      bucket:"PILOT",
+      top_contributors:["Sandbox participation sought","MiCA / CBDC framework relevance","Compliance infrastructure overlap","Cross-chain settlement partnership"],
+      evidence_snippets:["NexaLayer has live testnet with compliance modules","MiCA-aligned product","Actively seeking regulated institution pilots","Not actively raising capital"]
+    };
+
+    const P1_OUTPUT = {
+      meeting_type_badge:"High-confidence investment meeting",
+      match_insight_headline:"$200M mandate meets Series B custody raise",
+      counterparty_one_liner:"VaultBridge (Marcus T.) — Series B custody & settlement infra, live with 2 European banks, actively raising $40M from SWF investors.",
+      proof_chips:["Actively raising","European banks live","Trail of Bits audit"],
+      why_this_matters:"Your $200M RWA mandate targets Series B+ custody infrastructure. VaultBridge is live with European banks, audited, and raising $40M from SWF allocators. The stage, sector, and capital type are directly aligned.",
+      key_points:[
+        "Your RWA deployment window is open — they have a Series B round targeted at SWF allocators.",
+        "Your infra thesis covers custody and settlement — VaultBridge is live in both with named institutional clients.",
+        "Your check size targets Series B+ — their $40M raise is within that range."
+      ],
+      suggested_opener:"Is the $40M Series B open to SWF co-investors, and what's your timeline to close?",
+      cta_hint:"Plan a meeting"
+    };
+
+    const PILOT_OUTPUT = {
+      meeting_type_badge:"Pilot / sandbox meeting",
+      match_insight_headline:"Compliance L2 pilot for institutional DeFi",
+      counterparty_one_liner:"NexaLayer (James W.) — enterprise L2 with compliance modules, MiCA-aligned, live testnet, seeking regulated institution pilots.",
+      proof_chips:["Live testnet","MiCA-aligned","Seeking pilots"],
+      why_this_matters:"Your institutional DeFi infrastructure mandate includes evaluating compliant settlement rails. NexaLayer has a live MiCA-aligned L2 actively seeking regulated institution pilots — not a capital raise.",
+      key_points:[
+        "Your portfolio companies need compliant throughput rails — NexaLayer builds compliance-native L2 for exactly this.",
+        "Your infra thesis extends to settlement infrastructure — NexaLayer is seeking cross-chain settlement partnerships.",
+        "Your institutional DeFi mandate benefits from KYC/AML-native infrastructure — their compliance modules are shipped."
+      ],
+      suggested_opener:"Which of your portfolio companies could run a cross-chain settlement pilot on NexaLayer in Q3?",
+      cta_hint:"Plan a meeting"
+    };
+
+    let currentScenario = 'p1';
+    let rawVisible = false;
+
+    function setScenario(which){
+      currentScenario = which;
+      document.getElementById('scenario-p1').classList.toggle('active', which==='p1');
+      document.getElementById('scenario-pilot').classList.toggle('active', which==='pilot');
+      renderScenario();
+    }
+
+    function renderScenario(){
+      const payload = currentScenario === 'p1' ? LIVE_EXAMPLE : PILOT_EXAMPLE;
+      const output  = currentScenario === 'p1' ? P1_OUTPUT : PILOT_OUTPUT;
+
+      document.getElementById('payload-json').textContent = JSON.stringify(payload, null, 2);
+
+      const card = document.getElementById('match-card');
+      card.innerHTML = `
+        <div class="match-card-header">
+          <span>● ${output.meeting_type_badge}</span>
+        </div>
+        <div class="match-card-body">
+          <div class="match-headline">${output.match_insight_headline}</div>
+          <div class="match-one-liner">${output.counterparty_one_liner}</div>
+          <div class="chip-row">
+            ${output.proof_chips.map(c => `<span class="chip">${c}</span>`).join('')}
+          </div>
+          <div class="why-box">${output.why_this_matters}</div>
+          <div>
+            ${output.key_points.map(p => `<div class="key-point"><span>→</span><span>${p}</span></div>`).join('')}
+          </div>
+          <div class="opener">"${output.suggested_opener}"</div>
+          <button class="cta-btn">${output.cta_hint}</button>
+        </div>
+      `;
+
+      document.getElementById('raw-json-pre').textContent = JSON.stringify(output, null, 2);
+    }
+
+    function toggleRawJson(){
+      rawVisible = !rawVisible;
+      const panel = document.getElementById('json-panel');
+      const btn   = document.getElementById('json-toggle-btn');
+      panel.style.display = rawVisible ? 'block' : 'none';
+      btn.textContent = rawVisible ? '▲ hide raw JSON output' : '▼ show raw JSON output';
+    }
+
+    function setPocTab(which){
+      document.getElementById('poc-tab-poc').classList.toggle('active', which==='poc');
+      document.getElementById('poc-tab-prod').classList.toggle('active', which==='prod');
+      const body = document.getElementById('poc-body');
+      if(which === 'poc'){
+        body.innerHTML =
+          'Run Agent 5 (context builder) + Agent 6 (LLM) synchronously after bucket assignment. One LLM call per pair, ~600–800 tokens. ' +
+          'Filter to scored pairs only (MatchScore ≥ 0.40). Store output in a <code>match_cards</code> table with ' +
+          '<code>viewer_id, counterparty_id, bucket, card_json, generated_at</code>. Serve directly from the Proof of Match app without ' +
+          'real-time LLM calls.';
+      } else {
+        body.innerHTML =
+          'Pre-generate all cards 24–48 hours before the event via an async queue. Process pairs by bucket priority (P1 first). ' +
+          'Validate JSON and field constraints, retrying failures with adjusted settings. Cache cards in Redis for sub-10ms reads ' +
+          'and store prompt and model versions so you can A/B test and safely roll back.';
+      }
+    }
+
+    // Initial render
+    setScenario('p1');
+    setPocTab('poc');
+  </script>
+</body>
+</html>
