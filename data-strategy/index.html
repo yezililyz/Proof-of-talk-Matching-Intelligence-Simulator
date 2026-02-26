@@ -1,288 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Proof of Match · Implementation Pipeline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap');
 
-    card = json.loads(raw)
-    _validate_card(card)
-    return card
-          </pre>
-        </div>
-      </div>
+    :root {
+      --bg:#07070f;
+      --surface:#0f0f1a;
+      --border:#1e1e38;
+      --llm:#a78bfa;
+      --det:#00e5a0;
+      --emb:#38bdf8;
+      --comp:#f5a623;
+      --min:#ff6b6b;
+      --text:#e2e2f0;
+      --muted:#6a6a8a;
+      --dim:#3a3a5a;
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family:'Instrument Sans','Helvetica Neue',sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-track{background:#0f0f1a}
+    ::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:4px}
+
+    code{font-family:'DM Mono',monospace;font-size:11px;color:var(--det)}
+
+    .app-header{
+      background:var(--surface);
+      border-bottom:1px solid var(--border);
+      position:sticky;
+      top:0;
+      z-index:50;
+    }
+    .app-header-top{
+      display:flex;
+      align-items:center;
+      gap:11px;
+      padding:11px 24px 0;
+    }
+    .app-logo{
+      width:26px;
+      height:26px;
+      background:linear-gradient(135deg,var(--det),#6c63ff);
+      border-radius:5px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-shrink:0;
+    }
+    .app-logo span{
+      color:#07070f;
+      font-size:12px;
+      font-weight:800;
+      font-family:'Syne',sans-serif;
+    }
+    .app-title{
+      font-family:'Syne',sans-serif;
+      font-size:13px;
+      font-weight:700;
+      color:var(--text);
+    }
+    .app-subtitle{
+      font-family:'DM Mono',monospace;
+      font-size:9.5px;
+      color:var(--dim);
+    }
+
+    .tabs{
+      display:flex;
+      overflow-x:auto;
+      padding:0 12px 4px;
+      gap:4px;
+    }
+    .tab-btn{
+      font-family:'DM Mono',monospace;
+      font-size:10px;
+      padding:8px 12px;
+      border:none;
+      background:transparent;
+      color:var(--dim);
+      border-bottom:2px solid transparent;
+      white-space:nowrap;
+      cursor:pointer;
+      transition:color .12s, border-bottom-color .12s;
+    }
+    .tab-btn.active{
+      color:var(--det);
+      border-bottom-color:var(--det);
+    }
+
+    .page{
+      max-width:980px;
+      margin:0 auto;
+      padding:28px 16px 80px;
+    }
+
+    .kicker{
+      font-family:'DM Mono',monospace;
+      font-size:9.5px;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      color:var(--llm);
+      margin-bottom:6px;
+    }
+    .section-title{
+      font-family:'Syne',sans-serif;
+      font-size:24px;
+      font-weight:700;
+      margin-bottom:6px;
+      color:var(--text);
+    }
+    .section-body{
+      font-size:13px;
+      color:var(--muted);
+      line-height:1.75;
+      margin-bottom:22px;
+    }
+
+    .badge{
+      display:inline-block;
+      font-family:'DM Mono',monospace;
+      font-size:10px;
+      padding:3px 9px;
+      border-radius:12px;
+      border:1px solid rgba(0,229,160,0.25);
+      background:rgba(0,229,160,0.08);
+      color:var(--det);
+      margin-left:8px;
+    }
+
+    /* Pipeline strip */
+    .pipeline-label{
+      font-family:'DM Mono',monospace;
+      font-size:9.5px;
+      color:var(--dim);
+      text-transform:uppercase;
+      margin-bottom:10px;
+      letter-spacing:.12em;
+    }
+    .pipeline-strip{
+      display:flex;
+      gap:0;
+      overflow-x:auto;
+      padding-bottom:4px;
+      margin-bottom:24px;
+    }
+    .pipeline-step{
+      display:flex;
+      align-items:center;
+      flex-shrink:0;
+    }
+    .pipeline-card{
+      min-width:150px;
+      background:#0f0f1a;
+      border-radius:8px;
+      padding:10px 14px;
+      border:1px solid var(--border);
+    }
+    .pipeline-card.highlight{
+      background:rgba(167,139,250,.08);
+      border-color:var(--llm);
+    }
+    .pipeline-name{
+      font-family:'Syne',sans-serif;
+      font-size:11px;
+      font-weight:700;
+      margin-bottom:3px;
+      color:var(--llm);
+    }
+    .pipeline-desc{
+      font-size:10.5px;
+      color:var(--muted);
+      line-height:1.5;
+    }
+    .pipeline-this-tab{
+      font-family:'DM Mono',monospace;
+      font-size:9px;
+      color:var(--llm);
+      margin-top:4px;
+      text-transform:uppercase;
+    }
+    .pipeline-arrow{
+      color:var(--dim);
+      font-size:14px;
+      padding:0 5px;
+      flex-shrink:0;
+    }
+
+    /* Code + prompt blocks */
+    .code-shell{
+      background:#050510;
+      border:1px solid var(--border);
+      border-radius:8px;
+      overflow:hidden;
+      margin:10px 0;
+    }
+    .code-shell-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:6px 14px;
+      border-bottom:1px solid var(--border);
+      background:#0a0a18;
+    }
+    .code-shell-lang{
+      font-family:'DM Mono',monospace;
+      font-size:9.5px;
+      color:var(--dim);
+      text-transform:uppercase;
+      letter-spacing:.1em;
+    }
+    .code-shell-dots{
+      display:flex;
+      gap:5px;
+    }
+    .code-shell-dots span{
+      width:8px;
+      height:8px;
+      border-radius:50%;
+      opacity:.5;
+    }
+    .code-shell-pre{
+      padding:14px 16px;
+      font-family:'DM Mono',monospace;
+      font-size:11.5px;
+      line-height:1.85;
+      color:#c8c8e8;
+      overflow-x:auto;
+      white-space:pre;
+    }
+
+    .prompt-tabs{
+      display:flex;
+      gap:6px;
+      margin:16px 0 8px;
+      flex-wrap:wrap;
+    }
+    .prompt-tab{
+      font-family:'DM Mono',monospace;
+      font-size:10.5px;
+      padding:6px 12px;
+      border-radius:6px;
+      border:1px solid var(--border);
+      background:var(--surface);
+      color:var(--dim);
+      cursor:pointer;
+    }
+    .prompt-tab.active{
+      border-color:var(--llm);
+      background:rgba(167,139,250,.08);
+      color:var(--llm);
+    }
+
+    .prompt-block{
+      border:1px solid rgba(167,139,250,.3);
+      border-radius:8px;
+      overflow:hidden;
+      margin:10px 0 20px;
+    }
+    .prompt-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:6px 14px;
+      background:#0a0a18;
+      border-bottom:1px solid rgba(167,139,250,.3);
+    }
+    .prompt-header span{
+      font-family:'DM Mono',monospace;
+      font-size:10px;
+      color:var(--llm);
+    }
+    .prompt-pre{
+      padding:14px 16px;
+      font-family:'DM Mono',monospace;
+      font-size:11.5px;
+      line-height:1.85;
+      color:#c8c8e8;
+      background:#050510;
+      white-space:pre-wrap;
+    }
+
+    /* Layout boxes */
+    .two-col{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:16px;
+      margin:18px 0 10px;
+    }
+    .sub-label{
+      font-family:'DM Mono',monospace;
+      font-size:9.5px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:.1em;
+      margin:14px 0 7px;
+    }
+    .info-box{
+      background:rgba(245,166,35,.06);
+      border:1px solid rgba(245,166,35,.2);
+      border-radius:8px;
+      padding:12px 15px;
+      font-size:12.5px;
+      color:var(--muted);
+      line-height:1.75;
+      margin:4px 0 16px;
+    }
+
+    /* Table */
+    .field-table-wrap{overflow-x:auto;margin:10px 0;}
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size:12px;
+    }
+    th{
+      background:#0a0a18;
+      color:var(--dim);
+      padding:8px 12px;
+      border:1px solid var(--border);
+      text-align:left;
+      font-family:'DM Mono',monospace;
+      font-size:10px;
+    }
+    td{
+      padding:8px 12px;
+      border:1px solid var(--border);
+      font-size:11.5px;
+      color:var(--muted);
+    }
+
+    /* Match card */
+    .card-preview-title{
+      font-family:'Syne',sans-serif;
+      font-size:14px;
+      font-weight:700;
+      margin:16px 0 8px;
+    }
+    .scenario-tabs{
+      display:flex;
+      gap:8px;
+      margin-bottom:12px;
+      flex-wrap:wrap;
+    }
+    .scenario-btn{
+      font-family:'DM Mono',monospace;
+      font-size:10.5px;
+      padding:6px 13px;
+      border-radius:6px;
+      border:1px solid var(--border);
+      background:var(--surface);
+      color:var(--dim);
+      cursor:pointer;
+    }
+    .scenario-btn.active{
+      border-color:var(--det);
+      background:rgba(0,229,160,.08);
+      color:var(--det);
+    }
+
+    .match-card{
+      background:#0f0f1a;
+      border-radius:12px;
+      overflow:hidden;
+      max-width:380px;
+      border:1px solid rgba(0,229,160,.3);
+    }
+    .match-card-header{
+      background:rgba(0,229,160,.07);
+      border-bottom:1px solid rgba(0,229,160,.25);
+      padding:9px 16px;
+    }
+    .match-card-header span{
+      font-family:'DM Mono',monospace;
+      font-size:10px;
+      color:var(--det);
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+    .match-card-body{
+      padding:14px 16px;
+    }
+    .match-headline{
+      font-family:'Syne',sans-serif;
+      font-size:16px;
+      font-weight:700;
+      color:var(--text);
+      margin-bottom:6px;
+    }
+    .match-one-liner{
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:12px;
+      line-height:1.55;
+    }
+    .chip-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:5px;
+      margin-bottom:12px;
+    }
+    .chip{
+      font-family:'DM Mono',monospace;
+      font-size:10.5px;
+      padding:3px 9px;
+      border-radius:12px;
+      border:1px solid rgba(0,229,160,.3);
+      background:rgba(0,229,160,.08);
+      color:var(--det);
+    }
+    .why-box{
+      font-size:12px;
+      color:#a0a0c0;
+      line-height:1.7;
+      margin-bottom:12px;
+      border-left:2px solid rgba(0,229,160,.4);
+      padding-left:10px;
+    }
+    .key-point{
+      display:flex;
+      gap:8px;
+      padding:5px 0;
+      border-bottom:1px solid var(--border);
+      font-size:11.5px;
+      color:var(--muted);
+      line-height:1.55;
+    }
+    .key-point span:first-child{
+      color:var(--det);
+      flex-shrink:0;
+      margin-top:1px;
+    }
+    .opener{
+      background:#16162a;
+      border-radius:6px;
+      padding:9px 11px;
+      margin:10px 0;
+      font-size:11.5px;
+      color:var(--text);
+      font-style:italic;
+    }
+    .cta-btn{
+      width:100%;
+      padding:11px;
+      border-radius:8px;
+      border:none;
+      background:var(--det);
+      color:#07070f;
+      font-family:'Syne',sans-serif;
+      font-weight:700;
+      font-size:13px;
+      cursor:pointer;
+    }
+
+    .json-toggle{
+      margin-top:10px;
+    }
+    .json-toggle button{
+      font-family:'DM Mono',monospace;
+      font-size:10px;
+      padding:5px 11px;
+      border-radius:5px;
+      border:1px solid var(--border);
+      background:var(--surface);
+      color:var(--dim);
+      cursor:pointer;
+    }
+    .json-panel{
+      background:#050510;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px 13px;
+      margin-top:6px;
+      max-height:260px;
+      overflow-y:auto;
+    }
+    .json-panel pre{
+      font-family:'DM Mono',monospace;
+      font-size:10.5px;
+      line-height:1.75;
+      color:#8888aa;
+      white-space:pre-wrap;
+    }
+
+    .poc-prod{
+      border:1px solid var(--border);
+      border-radius:8px;
+      overflow:hidden;
+      margin:20px 0 0;
+    }
+    .poc-prod-header{
+      display:flex;
+      background:#0a0a18;
+      border-bottom:1px solid var(--border);
+    }
+    .poc-tab{
+      font-family:'DM Mono',monospace;
+      font-size:10.5px;
+      padding:7px 16px;
+      border:none;
+      background:transparent;
+      color:var(--dim);
+      cursor:pointer;
+      border-bottom:2px solid transparent;
+    }
+    .poc-tab.active{
+      color:var(--text);
+      border-bottom-color:var(--comp);
+    }
+    .poc-body{
+      padding:14px 16px;
+      background:#050510;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.78;
+    }
+
+    @media (max-width:900px){
+      .page{padding:24px 14px 60px;}
+      .two-col{grid-template-columns:1fr;}
+      .match-card{max-width:100%;}
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-top">
+      <div class="app-logo"><span>P</span></div>
       <div>
-        <div class="sub-label">Output schema + constraints</div>
-        <div class="field-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th>Constraint</th>
-                <th>Bucket rule</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">meeting_type_badge</td>
-                <td>One of 4 values</td>
-                <td>P1→capital, PILOT→sandbox, P2→strategic, P3→warm</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">match_insight_headline</td>
-                <td>≤52 chars</td>
-                <td>Concrete nouns, no hype</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">counterparty_one_liner</td>
-                <td>≤120 chars</td>
-                <td>Facts only, no inferences</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">proof_chips</td>
-                <td>Exactly 3, ≤24 chars</td>
-                <td>Must appear in evidence</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">why_this_matters</td>
-                <td>≤260 chars</td>
-                <td>Viewer mandate + CP evidence</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">key_points</td>
-                <td>Exactly 3, ≤110 chars</td>
-                <td>You… → They… structure</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">suggested_opener</td>
-                <td>≤120 chars</td>
-                <td>Actionable question</td>
-              </tr>
-              <tr>
-                <td style="color:var(--det);font-family:'DM Mono',monospace;">cta_hint</td>
-                <td>"Plan a meeting" or "Exchange details"</td>
-                <td>Derived from bucket default</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="app-title">Proof of Match · Implementation Pipeline</div>
+        <div class="app-subtitle">
+          All scores: definition · input fields · implementation (Python/SQL/LLM prompt) · POC vs production · stage flag map
+        </div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <!-- Minimal tab strip; only Explainer section anchored for now -->
+      <button class="tab-btn active" onclick="scrollToSection('explainer')">14 · Explainer Agent</button>
+    </nav>
+  </header>
+
+  <main class="page" id="explainer">
+    <div class="kicker">Agent 5 + 6 · Explanation Layer</div>
+    <div class="section-title">Match Explanation Agent</div>
+    <p class="section-body">
+      The final two agents translate scored pair data into a mobile-first match card. Agent 5 builds a sanitized context payload
+      (no internal scores, no model terms). Agent 6 runs the LLM explanation and returns structured JSON for the app.
+    </p>
+
+    <!-- PIPELINE POSITION -->
+    <div class="pipeline-label">Pipeline Position</div>
+    <div class="pipeline-strip" aria-label="Pipeline position for explanation agents">
+      <div class="pipeline-step">
+        <div class="pipeline-card">
+          <div class="pipeline-name">Agent 1</div>
+          <div class="pipeline-desc">Individual enrichment → cred, fin_ready, ops_ready cached</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-card">
+          <div class="pipeline-name" style="color:var(--emb)">Agent 2</div>
+          <div class="pipeline-desc">Pairwise scoring → 6 components, FR, OR computed</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-card">
+          <div class="pipeline-name" style="color:var(--det)">Agent 3</div>
+          <div class="pipeline-desc">MatchScore + RankScore per persona weight vector</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-card">
+          <div class="pipeline-name" style="color:var(--comp)">Agent 4</div>
+          <div class="pipeline-desc">Bucket assignment — rules-based SQL CASE WHEN</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-card highlight">
+          <div class="pipeline-name">Agent 5</div>
+          <div class="pipeline-desc">Context builder — assembles explainer payload from scores</div>
+          <div class="pipeline-this-tab">◀ focus here</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-card highlight" style="border-color:var(--min);background:rgba(255,107,107,0.06);">
+          <div class="pipeline-name" style="color:var(--min)">Agent 6</div>
+          <div class="pipeline-desc">Explainer LLM — generates match card JSON from payload</div>
+          <div class="pipeline-this-tab" style="color:var(--min)">◀ this is what users see</div>
         </div>
       </div>
     </div>
 
-    <!-- LIVE PREVIEW -->
-    <div class="card-preview-title">Live Output Preview</div>
-    <div class="scenario-tabs">
-      <button class="scenario-btn active" id="scenario-p1" onclick="setScenario('p1')">
-        P1 — capital meeting
+    <!-- AGENT 5 -->
+    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:4px;">
+      Agent 5 — Context Builder <span class="badge">Deterministic</span>
+    </div>
+    <p class="section-body" style="margin-bottom:10px;">
+      Runs after bucket assignment. Reads scored pair data and assembles a clean explainer payload — no scores, no internal model
+      terms, no bucket codes. Translates scoring artifacts into human-readable drivers.
+    </p>
+
+    <div class="code-shell">
+      <div class="code-shell-header">
+        <div class="code-shell-lang">python</div>
+        <div class="code-shell-dots">
+          <span style="background:#ff6b6b;"></span>
+          <span style="background:#f5a623;"></span>
+          <span style="background:#00e5a0;"></span>
+        </div>
+      </div>
+      <pre class="code-shell-pre">
+from dataclasses import dataclass
+from typing import Literal
+
+BucketType = Literal["P1", "PILOT", "P2", "P3"]
+
+BUCKET_BADGE = {
+    "P1":    "High-confidence investment meeting",
+    "PILOT": "Pilot / sandbox meeting",
+    "P2":    "Strategic conversation",
+    "P3":    "Keep warm / follow up",
+}
+
+BUCKET_CTA = {
+    "P1":    "Plan a meeting",
+    "PILOT": "Plan a meeting",
+    "P2":    "Exchange details",
+    "P3":    "Exchange details",
+}
+
+def build_explainer_payload(viewer_id: str, counterparty_id: str, db) -&gt; dict:
+    """
+    Agent 5: assemble sanitized context payload for Agent 6.
+    Pulls from:
+      - enriched_profiles (Agent 1 output)
+      - pair_scores (Agent 2 + 3 output)
+      - match_buckets (Agent 4 output)
+    Returns payload safe to send to the LLM.
+    """
+    viewer     = db.get_profile(viewer_id)
+    cp         = db.get_profile(counterparty_id)
+    pair       = db.get_pair_scores(viewer_id, counterparty_id)
+    bucket_row = db.get_bucket(viewer_id, counterparty_id)
+
+    bucket: BucketType = bucket_row["bucket"]
+
+    top_contributors = _build_contributors(pair, viewer, cp)
+    evidence         = cp.get("traction_signals", []) + cp.get("audit_status", [])
+
+    return {
+        "viewer": {
+            "name":            viewer["name"],
+            "persona_type":    viewer["persona_type"],
+            "mandate_summary": viewer["mandate_summary"],
+            "primary_intent":  viewer["intent_extracted"],
+            "tags":            viewer["vertical_tags"],
+            "readiness_signals": _format_readiness(viewer),
+        },
+        "counterparty": {
+            "name":            cp["name"],
+            "persona_type":    cp["persona_type"],
+            "mandate_summary": cp["mandate_summary"],
+            "primary_intent":  cp["intent_extracted"],
+            "tags":            cp["vertical_tags"],
+            "traction_evidence": evidence,
+            "readiness_signals": _format_readiness(cp),
+        },
+        "bucket":           bucket,
+        "meeting_type":     BUCKET_BADGE[bucket],
+        "cta_allowed":      ["Plan a meeting", "Exchange details"],
+        "default_cta":      BUCKET_CTA[bucket],
+        "top_contributors": top_contributors,
+        "evidence_snippets": evidence,
+        "constraints":      db.get_event_constraints(),
+    }
+      </pre>
+    </div>
+
+    <!-- AGENT 6 -->
+    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin:22px 0 4px;">
+      Agent 6 — Explainer LLM <span class="badge" style="border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.08);color:var(--llm);">LLM Prompt</span>
+    </div>
+    <p class="section-body" style="margin-bottom:10px;">
+      Receives the clean payload from Agent 5 and returns structured JSON for the match card. The prompt is bucket-aware but never
+      exposes bucket codes or internal scores to attendees in the Proof of Match app.
+    </p>
+
+    <div class="prompt-tabs">
+      <button class="prompt-tab active" id="prompt-tab-simplified" onclick="setPromptTab('simplified')">
+        Simplified Prompt (recommended)
       </button>
-      <button class="scenario-btn" id="scenario-pilot" onclick="setScenario('pilot')">
-        PILOT — sandbox meeting
+      <button class="prompt-tab" id="prompt-tab-full" onclick="setPromptTab('full')">
+        Full Original Prompt
       </button>
     </div>
 
+    <div id="prompt-simplified" class="prompt-block">
+      <div class="prompt-header">
+        <span>System Prompt · Agent 6</span>
+        <span>⚡ LLM</span>
+      </div>
+      <pre class="prompt-pre">
+You write match card text for an executive networking app.
+Output ONLY valid JSON — no preamble, no markdown.
+
+HARD RULES:
+- Use ONLY facts in the input. Never invent numbers, clients, timelines, or certifications.
+- Never mention: MatchScore, DealReady, alpha/beta/gamma, P1/P2/P3/PILOT, "synergies", "alignment", "ecosystem".
+- Do not write "Both…" or "You both…". Use "You…" for viewer, third-person for counterparty.
+- No numeric scores or percentages.
+- Plain executive language. Skimmable in 8 seconds.
+
+MEETING TYPE → FRAMING RULE:
+  "High-confidence investment meeting" → capital transaction framing only. No pilot language.
+  "Pilot / sandbox meeting"           → operational/sandbox framing only. No investment language.
+  "Strategic conversation"            → insight/positioning framing. No capital urgency.
+  "Keep warm / follow up"             → low immediacy. Recommend "Exchange details".
+
+OUTPUT SCHEMA:
+{
+  "meeting_type_badge":      one of the four meeting types above,
+  "match_insight_headline":  ≤52 chars, concrete nouns, no hype,
+  "counterparty_one_liner":  ≤120 chars, identity + what they do (facts only),
+  "proof_chips":             exactly 3 items, each ≤24 chars, must be in input evidence,
+  "why_this_matters":        ≤260 chars, 2-3 sentences, viewer mandate + counterparty evidence,
+  "key_points":              exactly 3 bullets ≤110 chars each, each links viewer fact → counterparty fact,
+  "suggested_opener":        1 question ≤120 chars, actionable,
+  "cta_hint":                "Plan a meeting" or "Exchange details"
+}
+      </pre>
+    </div>
+
+    <div id="prompt-full" class="prompt-block" style="display:none;">
+      <div class="prompt-header">
+        <span>Full Specification (reference only)</span>
+        <span>⚡ LLM</span>
+      </div>
+      <pre class="prompt-pre">
+You are the Match Explanation Agent for the Proof of Match network.
+Your output appears on match cards in the attendee app.
+
+CORE PRINCIPLES:
+- Evidence only (no invented facts).
+- No internal model terms or bucket codes.
+- No hype or vague jargon.
+- Outcome-driven, mobile-first copy.
+
+[Full detailed spec omitted in UI; keep in code/docs if needed.]
+      </pre>
+    </div>
+
+    <!-- PYTHON CALLER + SCHEMA -->
     <div class="two-col">
-      <!-- Payload JSON (read-only) -->
       <div>
-        <div class="sub-label">Agent 5 payload (input to Agent 6)</div>
-        <div class="code-shell" style="max-height:460px;overflow-y:auto;">
+        <div class="sub-label">Python caller — Agent 6</div>
+        <div class="code-shell">
           <div class="code-shell-header">
-            <div class="code-shell-lang">json</div>
+            <div class="code-shell-lang">python</div>
             <div class="code-shell-dots">
               <span style="background:#ff6b6b;"></span>
               <span style="background:#f5a623;"></span>
               <span style="background:#00e5a0;"></span>
             </div>
           </div>
-          <pre id="payload-json" class="code-shell-pre"></pre>
-        </div>
-      </div>
+          <pre class="code-shell-pre">
+import anthropic, json
 
-      <!-- Match card -->
-      <div>
-        <div class="sub-label">Agent 6 output → rendered match card</div>
-        <div class="match-card" id="match-card">
-          <!-- Filled by JS -->
-        </div>
-        <div class="json-toggle">
-          <button id="json-toggle-btn" onclick="toggleRawJson()">▼ show raw JSON output</button>
-          <div id="json-panel" class="json-panel" style="display:none;">
-            <pre id="raw-json-pre"></pre>
-          </div>
-        </div>
-      </div>
-    </div>
+client = anthropic.Anthropic()
 
-    <!-- POC vs production -->
-    <div class="section-title" style="font-size:14px;margin:22px 0 8px;">POC vs Production</div>
-    <div class="poc-prod" id="poc-prod">
-      <div class="poc-prod-header">
-        <button class="poc-tab active" id="poc-tab-poc" onclick="setPocTab('poc')">🧪 POC</button>
-        <button class="poc-tab" id="poc-tab-prod" onclick="setPocTab('prod')">🏭 Production</button>
-      </div>
-      <div class="poc-body" id="poc-body">
-        Run Agent 5 (context builder) + Agent 6 (LLM) synchronously after bucket assignment. One LLM call per pair, ~600–800 tokens.
-        Filter to scored pairs only (MatchScore ≥ 0.40). Store output in a <code>match_cards</code> table with
-        <code>viewer_id, counterparty_id, bucket, card_json, generated_at</code>. Serve directly from the Proof of Match app without
-        real-time LLM calls.
-      </div>
-    </div>
+def run_explainer_agent(payload: dict) -> dict:
+    """Call LLM explainer with sanitized payload."""
+    prompt = build_user_prompt(payload)
 
-    <div class="info-box">
-      <strong style="color:var(--comp);">Branding note:</strong> All attendee-facing language, including match cards and CTAs, should reference
-      the product as <strong style="color:var(--text);">Proof of Match</strong>. Internal agent names (Agent 1–6) remain implementation details and
-      are never surfaced in the UI.
-    </div>
-  </main>
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=800,
+        temperature=0,
+        system=EXPLAINER_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
 
-  <script>
-    // --- Simple behavior: scroll + prompt tab + scenario + JSON toggles ---
-
-    function scrollToSection(id){
-      const el = document.getElementById(id);
-      if(el){ el.scrollIntoView({behavior:'smooth',block:'start'}); }
-    }
-
-    function setPromptTab(which){
-      document.getElementById('prompt-tab-simplified').classList.toggle('active', which==='simplified');
-      document.getElementById('prompt-tab-full').classList.toggle('active', which==='full');
-      document.getElementById('prompt-simplified').style.display = which==='simplified' ? 'block' : 'none';
-      document.getElementById('prompt-full').style.display = which==='full' ? 'block' : 'none';
-    }
-
-    const LIVE_EXAMPLE = {
-      viewer:{
-        name:"Amara K.",persona_type:"investor",
-        mandate_summary:"Deploying $200M earmarked for RWA and infrastructure. Fund vintage 2021, peak deployment window. Check size Series B+.",
-        primary_intent:"Deploy $200M into RWA and infrastructure at Series B+",
-        tags:["RWA","institutional-DeFi","infra","custody","Series-B+"],
-        readiness_signals:["Actively deploying","Fund vintage 2021 open","Check size defined"]
-      },
-      counterparty:{
-        name:"Marcus T.",persona_type:"founder",
-        mandate_summary:"Series B custody and settlement infrastructure live with European banks. $40M raised. Seeking strategic capital from SWF/growth VC.",
-        primary_intent:"Raise strategic capital from SWF and growth VCs, $40M Series B",
-        tags:["custody","settlement","RWA","institutional","European-banks","TradFi","infra"],
-        traction_evidence:["Live with 2 European banks","$40M raised","Audited contracts (Trail of Bits)"],
-        readiness_signals:["Actively raising","Series B open","SWF-qualified"]
-      },
-      bucket:"P1",
-      top_contributors:["Deploy capital ↔ raise capital","RWA custody + settlement overlap","Series B+ stage match","European bank traction"],
-      evidence_snippets:["VaultBridge is live with 2 European banks","$40M raised to date","Trail of Bits audit completed","Actively raising $40M Series B from SWF/growth VC"]
-    };
-
-    const PILOT_EXAMPLE = {
-      viewer:{
-        name:"Amara K.",persona_type:"investor",
-        mandate_summary:"Deploying $200M earmarked for RWA and infrastructure. Fund vintage 2021.",
-        primary_intent:"Deploy $200M into RWA and infrastructure at Series B+",
-        tags:["RWA","institutional-DeFi","infra","custody","Series-B+"],
-        readiness_signals:["Actively deploying","Fund vintage 2021 open"]
-      },
-      counterparty:{
-        name:"James W.",persona_type:"founder",
-        mandate_summary:"Enterprise-grade L2 with built-in compliance modules targeting regulated financial institutions. Seeking banks and asset managers to pilot.",
-        primary_intent:"Find banks and asset managers to pilot NexaLayer compliance L2. Capital is secondary.",
-        tags:["L2","compliance","KYC","AML","MiCA","CBDC","institutional","infra"],
-        traction_evidence:["Live testnet with compliance modules","MiCA-aligned","Audited code"],
-        readiness_signals:["Seeking pilots","Sandbox-ready","Compliance modules shipped"]
-      },
-      bucket:"PILOT",
-      top_contributors:["Sandbox participation sought","MiCA / CBDC framework relevance","Compliance infrastructure overlap","Cross-chain settlement partnership"],
-      evidence_snippets:["NexaLayer has live testnet with compliance modules","MiCA-aligned product","Actively seeking regulated institution pilots","Not actively raising capital"]
-    };
-
-    const P1_OUTPUT = {
-      meeting_type_badge:"High-confidence investment meeting",
-      match_insight_headline:"$200M mandate meets Series B custody raise",
-      counterparty_one_liner:"VaultBridge (Marcus T.) — Series B custody & settlement infra, live with 2 European banks, actively raising $40M from SWF investors.",
-      proof_chips:["Actively raising","European banks live","Trail of Bits audit"],
-      why_this_matters:"Your $200M RWA mandate targets Series B+ custody infrastructure. VaultBridge is live with European banks, audited, and raising $40M from SWF allocators. The stage, sector, and capital type are directly aligned.",
-      key_points:[
-        "Your RWA deployment window is open — they have a Series B round targeted at SWF allocators.",
-        "Your infra thesis covers custody and settlement — VaultBridge is live in both with named institutional clients.",
-        "Your check size targets Series B+ — their $40M raise is within that range."
-      ],
-      suggested_opener:"Is the $40M Series B open to SWF co-investors, and what's your timeline to close?",
-      cta_hint:"Plan a meeting"
-    };
-
-    const PILOT_OUTPUT = {
-      meeting_type_badge:"Pilot / sandbox meeting",
-      match_insight_headline:"Compliance L2 pilot for institutional DeFi",
-      counterparty_one_liner:"NexaLayer (James W.) — enterprise L2 with compliance modules, MiCA-aligned, live testnet, seeking regulated institution pilots.",
-      proof_chips:["Live testnet","MiCA-aligned","Seeking pilots"],
-      why_this_matters:"Your institutional DeFi infrastructure mandate includes evaluating compliant settlement rails. NexaLayer has a live MiCA-aligned L2 actively seeking regulated institution pilots — not a capital raise.",
-      key_points:[
-        "Your portfolio companies need compliant throughput rails — NexaLayer builds compliance-native L2 for exactly this.",
-        "Your infra thesis extends to settlement infrastructure — NexaLayer is seeking cross-chain settlement partnerships.",
-        "Your institutional DeFi mandate benefits from KYC/AML-native infrastructure — their compliance modules are shipped."
-      ],
-      suggested_opener:"Which of your portfolio companies could run a cross-chain settlement pilot on NexaLayer in Q3?",
-      cta_hint:"Plan a meeting"
-    };
-
-    let currentScenario = 'p1';
-    let rawVisible = false;
-
-    function setScenario(which){
-      currentScenario = which;
-      document.getElementById('scenario-p1').classList.toggle('active', which==='p1');
-      document.getElementById('scenario-pilot').classList.toggle('active', which==='pilot');
-      renderScenario();
-    }
-
-    function renderScenario(){
-      const payload = currentScenario === 'p1' ? LIVE_EXAMPLE : PILOT_EXAMPLE;
-      const output  = currentScenario === 'p1' ? P1_OUTPUT : PILOT_OUTPUT;
-
-      document.getElementById('payload-json').textContent = JSON.stringify(payload, null, 2);
-
-      const card = document.getElementById('match-card');
-      card.innerHTML = `
-        <div class="match-card-header">
-          <span>● ${output.meeting_type_badge}</span>
-        </div>
-        <div class="match-card-body">
-          <div class="match-headline">${output.match_insight_headline}</div>
-          <div class="match-one-liner">${output.counterparty_one_liner}</div>
-          <div class="chip-row">
-            ${output.proof_chips.map(c => `<span class="chip">${c}</span>`).join('')}
-          </div>
-          <div class="why-box">${output.why_this_matters}</div>
-          <div>
-            ${output.key_points.map(p => `<div class="key-point"><span>→</span><span>${p}</span></div>`).join('')}
-          </div>
-          <div class="opener">"${output.suggested_opener}"</div>
-          <button class="cta-btn">${output.cta_hint}</button>
-        </div>
-      `;
-
-      document.getElementById('raw-json-pre').textContent = JSON.stringify(output, null, 2);
-    }
-
-    function toggleRawJson(){
-      rawVisible = !rawVisible;
-      const panel = document.getElementById('json-panel');
-      const btn   = document.getElementById('json-toggle-btn');
-      panel.style.display = rawVisible ? 'block' : 'none';
-      btn.textContent = rawVisible ? '▲ hide raw JSON output' : '▼ show raw JSON output';
-    }
-
-    function setPocTab(which){
-      document.getElementById('poc-tab-poc').classList.toggle('active', which==='poc');
-      document.getElementById('poc-tab-prod').classList.toggle('active', which==='prod');
-      const body = document.getElementById('poc-body');
-      if(which === 'poc'){
-        body.innerHTML =
-          'Run Agent 5 (context builder) + Agent 6 (LLM) synchronously after bucket assignment. One LLM call per pair, ~600–800 tokens. ' +
-          'Filter to scored pairs only (MatchScore ≥ 0.40). Store output in a <code>match_cards</code> table with ' +
-          '<code>viewer_id, counterparty_id, bucket, card_json, generated_at</code>. Serve directly from the Proof of Match app without ' +
-          'real-time LLM calls.';
-      } else {
-        body.innerHTML =
-          'Pre-generate all cards 24–48 hours before the event via an async queue. Process pairs by bucket priority (P1 first). ' +
-          'Validate JSON and field constraints, retrying failures with adjusted settings. Cache cards in Redis for sub-10ms reads ' +
-          'and store prompt and model versions so you can A/B test and safely roll back.';
-      }
-    }
-
-    // Initial render
-    setScenario('p1');
-    setPocTab('poc');
-  </script>
-</body>
-</html>
+    raw = response.content[0].text.strip()
+    if raw.startswith("
