@@ -1,797 +1,1433 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Proof of Match · Implementation Pipeline</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+  <head>
+    <meta charset="UTF-8" />
+    <title>Proof of Match · Implementation Pipeline</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- React + ReactDOM + Babel (for JSX in-browser) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body style="margin:0;background:#07070f;">
+    <div id="root"></div>
 
-    :root {
-      --bg:#07070f;
-      --surface:#0f0f1a;
-      --border:#1e1e38;
-      --llm:#a78bfa;
-      --det:#00e5a0;
-      --emb:#38bdf8;
-      --comp:#f5a623;
-      --min:#ff6b6b;
-      --text:#e2e2f0;
-      --muted:#6a6a8a;
-      --dim:#3a3a5a;
-    }
+    <script type="text/babel">
+      const { useState } = React;
 
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{
-      font-family:'Instrument Sans','Helvetica Neue',sans-serif;
-      background:var(--bg);
-      color:var(--text);
-    }
-    ::-webkit-scrollbar{width:4px;height:4px}
-    ::-webkit-scrollbar-track{background:#0f0f1a}
-    ::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:4px}
+      // ─── Shared atoms ──────────────────────────────────────────────────────────
+      const C = {
+        bg:"#07070f", surface:"#0f0f1a", border:"#1e1e38",
+        llm:"#a78bfa", det:"#00e5a0", emb:"#38bdf8", comp:"#f5a623", min_:"#ff6b6b",
+        text:"#e2e2f0", muted:"#6a6a8a", dim:"#3a3a5a",
+      };
 
-    code{font-family:'DM Mono',monospace;font-size:11px;color:var(--det)}
+      function Badge({ type }) {
+        const MAP = {
+          LLM:          { bg:"#a78bfa", label:"LLM Prompt" },
+          Deterministic:{ bg:"#00e5a0", label:"Deterministic" },
+          Embedding:    { bg:"#38bdf8", label:"Embedding Model" },
+          Composite:    { bg:"#f5a623", label:"Composite Formula" },
+          MinMax:       { bg:"#ff6b6b", label:"min() / max()" },
+          SQL:          { bg:"#6c63ff", label:"SQL / Rules" },
+        };
+        const m = MAP[type] || MAP.LLM;
+        return (
+          <span style={{ display:"inline-block", fontFamily:"DM Mono,monospace", fontSize:10, padding:"3px 9px", borderRadius:12, background:`${m.bg}18`, color:m.bg, border:`1px solid ${m.bg}40` }}>
+            {m.label}
+          </span>
+        );
+      }
 
-    .app-header{
-      background:var(--surface);
-      border-bottom:1px solid var(--border);
-      position:sticky;
-      top:0;
-      z-index:50;
-    }
-    .app-header-top{
-      display:flex;
-      align-items:center;
-      gap:11px;
-      padding:11px 24px 0;
-    }
-    .app-logo{
-      width:26px;
-      height:26px;
-      background:linear-gradient(135deg,var(--det),#6c63ff);
-      border-radius:5px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      flex-shrink:0;
-    }
-    .app-logo span{
-      color:#07070f;
-      font-size:12px;
-      font-weight:800;
-      font-family:'Syne',sans-serif;
-    }
-    .app-title{
-      font-family:'Syne',sans-serif;
-      font-size:13px;
-      font-weight:700;
-      color:var(--text);
-    }
-    .app-subtitle{
-      font-family:'DM Mono',monospace;
-      font-size:9.5px;
-      color:var(--dim);
-    }
+      function MethodIcon({ type }) {
+        const MAP = { LLM:"⚡", Deterministic:"⚙", Embedding:"🔷", Composite:"∑", MinMax:"min", SQL:"🗄" };
+        return <span>{MAP[type] || "?"}</span>;
+      }
 
-    .tabs{
-      display:flex;
-      overflow-x:auto;
-      padding:0 12px 4px;
-      gap:4px;
-    }
-    .tab-btn{
-      font-family:'DM Mono',monospace;
-      font-size:10px;
-      padding:8px 12px;
-      border:none;
-      background:transparent;
-      color:var(--dim);
-      border-bottom:2px solid transparent;
-      white-space:nowrap;
-      cursor:pointer;
-      transition:color .12s, border-bottom-color .12s;
-    }
-    .tab-btn.active{
-      color:var(--det);
-      border-bottom-color:var(--det);
-    }
+      function SyntaxCode({ lang, children }) {
+        return (
+          <div style={{ background:"#050510", border:"1px solid #1e1e38", borderRadius:8, overflow:"hidden", margin:"10px 0" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 14px", borderBottom:"1px solid #1e1e38", background:"#0a0a18" }}>
+              <span style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#3a3a5a", textTransform:"uppercase", letterSpacing:".1em" }}>{lang}</span>
+              <div style={{ display:"flex", gap:5 }}>
+                {["#ff6b6b","#f5a623","#00e5a0"].map(c=><div key={c} style={{ width:8,height:8,borderRadius:"50%",background:c,opacity:.5 }}/>)}
+              </div>
+            </div>
+            <pre style={{ padding:"14px 16px", fontFamily:"DM Mono,monospace", fontSize:11.5, lineHeight:1.85, color:"#c8c8e8", overflowX:"auto", margin:0 }}>{children}</pre>
+          </div>
+        );
+      }
 
-    .page{
-      max-width:980px;
-      margin:0 auto;
-      padding:28px 16px 80px;
-    }
+      function PromptBlock({ system, user }) {
+        const [tab, setTab] = useState("system");
+        return (
+          <div style={{ border:`1px solid ${C.llm}30`, borderRadius:8, overflow:"hidden", margin:"10px 0" }}>
+            <div style={{ display:"flex", background:"#0a0a18", borderBottom:`1px solid ${C.llm}20` }}>
+              {[["system","System Prompt"],["user","User Prompt Template"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setTab(k)}
+                  style={{ fontFamily:"DM Mono,monospace", fontSize:10, padding:"7px 14px", border:"none", background:"transparent", color:tab===k?C.llm:C.dim, cursor:"pointer", borderBottom:`2px solid ${tab===k?C.llm:"transparent"}` }}>
+                  {l}
+                </button>
+              ))}
+              <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", paddingRight:12 }}>
+                <span style={{ fontFamily:"DM Mono,monospace", fontSize:9, color:C.llm }}>⚡ LLM</span>
+              </div>
+            </div>
+            <pre style={{ padding:"14px 16px", fontFamily:"DM Mono,monospace", fontSize:11.5, lineHeight:1.85, color:"#c8c8e8", background:"#050510", overflowX:"auto", margin:0, whiteSpace:"pre-wrap" }}>
+              {tab==="system" ? system : user}
+            </pre>
+          </div>
+        );
+      }
 
-    .kicker{
-      font-family:'DM Mono',monospace;
-      font-size:9.5px;
-      text-transform:uppercase;
-      letter-spacing:.18em;
-      color:var(--llm);
-      margin-bottom:6px;
-    }
-    .section-title{
-      font-family:'Syne',sans-serif;
-      font-size:24px;
-      font-weight:700;
-      margin-bottom:6px;
-      color:var(--text);
-    }
-    .section-body{
-      font-size:13px;
-      color:var(--muted);
-      line-height:1.75;
-      margin-bottom:22px;
-    }
+      function FieldTable({ fields }) {
+        return (
+          <div style={{ overflowX:"auto", margin:"10px 0" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11.5 }}>
+              <thead>
+                <tr>{["Field","Type","Source","Required"].map(h=>(
+                  <th key={h} style={{ background:"#0a0a18", color:C.dim, padding:"7px 11px", border:`1px solid ${C.border}`, textAlign:"left", fontFamily:"DM Mono,monospace", fontSize:10 }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {fields.map((f,i)=>(
+                  <tr key={i} style={{ background: i%2===0?"#0f0f1a":"#0a0a18" }}>
+                    <td style={{ padding:"6px 11px", border:`1px solid ${C.border}`, fontFamily:"DM Mono,monospace", color:"#00e5a0", fontSize:11 }}>{f.name}</td>
+                    <td style={{ padding:"6px 11px", border:`1px solid ${C.border}`, color:"#a78bfa", fontFamily:"DM Mono,monospace", fontSize:11 }}>{f.type}</td>
+                    <td style={{ padding:"6px 11px", border:`1px solid ${C.border}`, color:C.muted }}>{f.src}</td>
+                    <td style={{ padding:"6px 11px", border:`1px solid ${C.border}`, color: f.req?"#00e5a0":C.dim, fontSize:11 }}>{f.req?"✓ required":"optional"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
 
-    .badge{
-      display:inline-block;
-      font-family:'DM Mono',monospace;
-      font-size:10px;
-      padding:3px 9px;
-      border-radius:12px;
-      border:1px solid rgba(0,229,160,0.25);
-      background:rgba(0,229,160,0.08);
-      color:var(--det);
-      margin-left:8px;
-    }
+      function OutputBox({ schema, note }) {
+        return (
+          <div style={{ background:"rgba(0,229,160,.05)", border:"1px solid rgba(0,229,160,.2)", borderRadius:7, padding:"12px 14px", margin:"10px 0" }}>
+            <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#00e5a0", textTransform:"uppercase", marginBottom:6 }}>Output Schema</div>
+            <pre style={{ fontFamily:"DM Mono,monospace", fontSize:12, color:"#e2e2f0", lineHeight:1.8, margin:0, whiteSpace:"pre-wrap" }}>{schema}</pre>
+            {note && <div style={{ fontSize:11.5, color:C.muted, marginTop:8, lineHeight:1.65 }}>{note}</div>}
+          </div>
+        );
+      }
 
-    /* Pipeline strip */
-    .pipeline-label{
-      font-family:'DM Mono',monospace;
-      font-size:9.5px;
-      color:var(--dim);
-      text-transform:uppercase;
-      margin-bottom:10px;
-      letter-spacing:.12em;
-    }
-    .pipeline-strip{
-      display:flex;
-      gap:0;
-      overflow-x:auto;
-      padding-bottom:4px;
-      margin-bottom:24px;
-    }
-    .pipeline-step{
-      display:flex;
-      align-items:center;
-      flex-shrink:0;
-    }
-    .pipeline-card{
-      min-width:150px;
-      background:#0f0f1a;
-      border-radius:8px;
-      padding:10px 14px;
-      border:1px solid var(--border);
-    }
-    .pipeline-card.highlight{
-      background:rgba(167,139,250,.08);
-      border-color:var(--llm);
-    }
-    .pipeline-name{
-      font-family:'Syne',sans-serif;
-      font-size:11px;
-      font-weight:700;
-      margin-bottom:3px;
-      color:var(--llm);
-    }
-    .pipeline-desc{
-      font-size:10.5px;
-      color:var(--muted);
-      line-height:1.5;
-    }
-    .pipeline-this-tab{
-      font-family:'DM Mono',monospace;
-      font-size:9px;
-      color:var(--llm);
-      margin-top:4px;
-      text-transform:uppercase;
-    }
-    .pipeline-arrow{
-      color:var(--dim);
-      font-size:14px;
-      padding:0 5px;
-      flex-shrink:0;
-    }
+      function UsedIn({ items }) {
+        return (
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6, margin:"10px 0" }}>
+            {items.map(item=>(
+              <span key={item} style={{ fontFamily:"DM Mono,monospace", fontSize:10.5, padding:"3px 9px", borderRadius:4, background:"#16162a", color:C.text, border:`1px solid ${C.border}` }}>
+                → {item}
+              </span>
+            ))}
+          </div>
+        );
+      }
 
-    /* Code + prompt blocks */
-    .code-shell{
-      background:#050510;
-      border:1px solid var(--border);
-      border-radius:8px;
-      overflow:hidden;
-      margin:10px 0;
-    }
-    .code-shell-header{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:6px 14px;
-      border-bottom:1px solid var(--border);
-      background:#0a0a18;
-    }
-    .code-shell-lang{
-      font-family:'DM Mono',monospace;
-      font-size:9.5px;
-      color:var(--dim);
-      text-transform:uppercase;
-      letter-spacing:.1em;
-    }
-    .code-shell-dots{
-      display:flex;
-      gap:5px;
-    }
-    .code-shell-dots span{
-      width:8px;
-      height:8px;
-      border-radius:50%;
-      opacity:.5;
-    }
-    .code-shell-pre{
-      padding:14px 16px;
-      font-family:'DM Mono',monospace;
-      font-size:11.5px;
-      line-height:1.85;
-      color:#c8c8e8;
-      overflow-x:auto;
-      white-space:pre;
-    }
-
-    .prompt-tabs{
-      display:flex;
-      gap:6px;
-      margin:16px 0 8px;
-      flex-wrap:wrap;
-    }
-    .prompt-tab{
-      font-family:'DM Mono',monospace;
-      font-size:10.5px;
-      padding:6px 12px;
-      border-radius:6px;
-      border:1px solid var(--border);
-      background:var(--surface);
-      color:var(--dim);
-      cursor:pointer;
-    }
-    .prompt-tab.active{
-      border-color:var(--llm);
-      background:rgba(167,139,250,.08);
-      color:var(--llm);
-    }
-
-    .prompt-block{
-      border:1px solid rgba(167,139,250,.3);
-      border-radius:8px;
-      overflow:hidden;
-      margin:10px 0 20px;
-    }
-    .prompt-header{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:6px 14px;
-      background:#0a0a18;
-      border-bottom:1px solid rgba(167,139,250,.3);
-    }
-    .prompt-header span{
-      font-family:'DM Mono',monospace;
-      font-size:10px;
-      color:var(--llm);
-    }
-    .prompt-pre{
-      padding:14px 16px;
-      font-family:'DM Mono',monospace;
-      font-size:11.5px;
-      line-height:1.85;
-      color:#c8c8e8;
-      background:#050510;
-      white-space:pre-wrap;
-    }
-
-    /* Layout boxes */
-    .two-col{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:16px;
-      margin:18px 0 10px;
-    }
-    .sub-label{
-      font-family:'DM Mono',monospace;
-      font-size:9.5px;
-      color:var(--muted);
-      text-transform:uppercase;
-      letter-spacing:.1em;
-      margin:14px 0 7px;
-    }
-    .info-box{
-      background:rgba(245,166,35,.06);
-      border:1px solid rgba(245,166,35,.2);
-      border-radius:8px;
-      padding:12px 15px;
-      font-size:12.5px;
-      color:var(--muted);
-      line-height:1.75;
-      margin:4px 0 16px;
-    }
-
-    /* Table */
-    .field-table-wrap{overflow-x:auto;margin:10px 0;}
-    table{
-      width:100%;
-      border-collapse:collapse;
-      font-size:12px;
-    }
-    th{
-      background:#0a0a18;
-      color:var(--dim);
-      padding:8px 12px;
-      border:1px solid var(--border);
-      text-align:left;
-      font-family:'DM Mono',monospace;
-      font-size:10px;
-    }
-    td{
-      padding:8px 12px;
-      border:1px solid var(--border);
-      font-size:11.5px;
-      color:var(--muted);
-    }
-
-    /* Match card */
-    .card-preview-title{
-      font-family:'Syne',sans-serif;
-      font-size:14px;
-      font-weight:700;
-      margin:16px 0 8px;
-    }
-    .scenario-tabs{
-      display:flex;
-      gap:8px;
-      margin-bottom:12px;
-      flex-wrap:wrap;
-    }
-    .scenario-btn{
-      font-family:'DM Mono',monospace;
-      font-size:10.5px;
-      padding:6px 13px;
-      border-radius:6px;
-      border:1px solid var(--border);
-      background:var(--surface);
-      color:var(--dim);
-      cursor:pointer;
-    }
-    .scenario-btn.active{
-      border-color:var(--det);
-      background:rgba(0,229,160,.08);
-      color:var(--det);
-    }
-
-    .match-card{
-      background:#0f0f1a;
-      border-radius:12px;
-      overflow:hidden;
-      max-width:380px;
-      border:1px solid rgba(0,229,160,.3);
-    }
-    .match-card-header{
-      background:rgba(0,229,160,.07);
-      border-bottom:1px solid rgba(0,229,160,.25);
-      padding:9px 16px;
-    }
-    .match-card-header span{
-      font-family:'DM Mono',monospace;
-      font-size:10px;
-      color:var(--det);
-      text-transform:uppercase;
-      letter-spacing:.08em;
-    }
-    .match-card-body{
-      padding:14px 16px;
-    }
-    .match-headline{
-      font-family:'Syne',sans-serif;
-      font-size:16px;
-      font-weight:700;
-      color:var(--text);
-      margin-bottom:6px;
-    }
-    .match-one-liner{
-      font-size:12px;
-      color:var(--muted);
-      margin-bottom:12px;
-      line-height:1.55;
-    }
-    .chip-row{
-      display:flex;
-      flex-wrap:wrap;
-      gap:5px;
-      margin-bottom:12px;
-    }
-    .chip{
-      font-family:'DM Mono',monospace;
-      font-size:10.5px;
-      padding:3px 9px;
-      border-radius:12px;
-      border:1px solid rgba(0,229,160,.3);
-      background:rgba(0,229,160,.08);
-      color:var(--det);
-    }
-    .why-box{
-      font-size:12px;
-      color:#a0a0c0;
-      line-height:1.7;
-      margin-bottom:12px;
-      border-left:2px solid rgba(0,229,160,.4);
-      padding-left:10px;
-    }
-    .key-point{
-      display:flex;
-      gap:8px;
-      padding:5px 0;
-      border-bottom:1px solid var(--border);
-      font-size:11.5px;
-      color:var(--muted);
-      line-height:1.55;
-    }
-    .key-point span:first-child{
-      color:var(--det);
-      flex-shrink:0;
-      margin-top:1px;
-    }
-    .opener{
-      background:#16162a;
-      border-radius:6px;
-      padding:9px 11px;
-      margin:10px 0;
-      font-size:11.5px;
-      color:var(--text);
-      font-style:italic;
-    }
-    .cta-btn{
-      width:100%;
-      padding:11px;
-      border-radius:8px;
-      border:none;
-      background:var(--det);
-      color:#07070f;
-      font-family:'Syne',sans-serif;
-      font-weight:700;
-      font-size:13px;
-      cursor:pointer;
-    }
-
-    .json-toggle{
-      margin-top:10px;
-    }
-    .json-toggle button{
-      font-family:'DM Mono',monospace;
-      font-size:10px;
-      padding:5px 11px;
-      border-radius:5px;
-      border:1px solid var(--border);
-      background:var(--surface);
-      color:var(--dim);
-      cursor:pointer;
-    }
-    .json-panel{
-      background:#050510;
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:10px 13px;
-      margin-top:6px;
-      max-height:260px;
-      overflow-y:auto;
-    }
-    .json-panel pre{
-      font-family:'DM Mono',monospace;
-      font-size:10.5px;
-      line-height:1.75;
-      color:#8888aa;
-      white-space:pre-wrap;
-    }
-
-    .poc-prod{
-      border:1px solid var(--border);
-      border-radius:8px;
-      overflow:hidden;
-      margin:20px 0 0;
-    }
-    .poc-prod-header{
-      display:flex;
-      background:#0a0a18;
-      border-bottom:1px solid var(--border);
-    }
-    .poc-tab{
-      font-family:'DM Mono',monospace;
-      font-size:10.5px;
-      padding:7px 16px;
-      border:none;
-      background:transparent;
-      color:var(--dim);
-      cursor:pointer;
-      border-bottom:2px solid transparent;
-    }
-    .poc-tab.active{
-      color:var(--text);
-      border-bottom-color:var(--comp);
-    }
-    .poc-body{
-      padding:14px 16px;
-      background:#050510;
-      font-size:12px;
-      color:var(--muted);
-      line-height:1.78;
-    }
-
-    @media (max-width:900px){
-      .page{padding:24px 14px 60px;}
-      .two-col{grid-template-columns:1fr;}
-      .match-card{max-width:100%;}
-    }
-  </style>
-</head>
-<body>
-  <header class="app-header">
-    <div class="app-header-top">
-      <div class="app-logo"><span>P</span></div>
-      <div>
-        <div class="app-title">Proof of Match · Implementation Pipeline</div>
-        <div class="app-subtitle">
-          All scores: definition · input fields · implementation (Python/SQL/LLM prompt) · POC vs production · stage flag map
-        </div>
-      </div>
-    </div>
-    <nav class="tabs">
-      <!-- Minimal tab strip; only Explainer section anchored for now -->
-      <button class="tab-btn active" onclick="scrollToSection('explainer')">14 · Explainer Agent</button>
-    </nav>
-  </header>
-
-  <main class="page" id="explainer">
-    <div class="kicker">Agent 5 + 6 · Explanation Layer</div>
-    <div class="section-title">Match Explanation Agent</div>
-    <p class="section-body">
-      The final two agents translate scored pair data into a mobile-first match card. Agent 5 builds a sanitized context payload
-      (no internal scores, no model terms). Agent 6 runs the LLM explanation and returns structured JSON for the app.
-    </p>
-
-    <!-- PIPELINE POSITION -->
-    <div class="pipeline-label">Pipeline Position</div>
-    <div class="pipeline-strip" aria-label="Pipeline position for explanation agents">
-      <div class="pipeline-step">
-        <div class="pipeline-card">
-          <div class="pipeline-name">Agent 1</div>
-          <div class="pipeline-desc">Individual enrichment → cred, fin_ready, ops_ready cached</div>
-        </div>
-        <div class="pipeline-arrow">→</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="pipeline-card">
-          <div class="pipeline-name" style="color:var(--emb)">Agent 2</div>
-          <div class="pipeline-desc">Pairwise scoring → 6 components, FR, OR computed</div>
-        </div>
-        <div class="pipeline-arrow">→</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="pipeline-card">
-          <div class="pipeline-name" style="color:var(--det)">Agent 3</div>
-          <div class="pipeline-desc">MatchScore + RankScore per persona weight vector</div>
-        </div>
-        <div class="pipeline-arrow">→</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="pipeline-card">
-          <div class="pipeline-name" style="color:var(--comp)">Agent 4</div>
-          <div class="pipeline-desc">Bucket assignment — rules-based SQL CASE WHEN</div>
-        </div>
-        <div class="pipeline-arrow">→</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="pipeline-card highlight">
-          <div class="pipeline-name">Agent 5</div>
-          <div class="pipeline-desc">Context builder — assembles explainer payload from scores</div>
-          <div class="pipeline-this-tab">◀ focus here</div>
-        </div>
-        <div class="pipeline-arrow">→</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="pipeline-card highlight" style="border-color:var(--min);background:rgba(255,107,107,0.06);">
-          <div class="pipeline-name" style="color:var(--min)">Agent 6</div>
-          <div class="pipeline-desc">Explainer LLM — generates match card JSON from payload</div>
-          <div class="pipeline-this-tab" style="color:var(--min)">◀ this is what users see</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- AGENT 5 -->
-    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:4px;">
-      Agent 5 — Context Builder <span class="badge">Deterministic</span>
-    </div>
-    <p class="section-body" style="margin-bottom:10px;">
-      Runs after bucket assignment. Reads scored pair data and assembles a clean explainer payload — no scores, no internal model
-      terms, no bucket codes. Translates scoring artifacts into human-readable drivers.
-    </p>
-
-    <div class="code-shell">
-      <div class="code-shell-header">
-        <div class="code-shell-lang">python</div>
-        <div class="code-shell-dots">
-          <span style="background:#ff6b6b;"></span>
-          <span style="background:#f5a623;"></span>
-          <span style="background:#00e5a0;"></span>
-        </div>
-      </div>
-      <pre class="code-shell-pre">
-from dataclasses import dataclass
-from typing import Literal
-
-BucketType = Literal["P1", "PILOT", "P2", "P3"]
-
-BUCKET_BADGE = {
-    "P1":    "High-confidence investment meeting",
-    "PILOT": "Pilot / sandbox meeting",
-    "P2":    "Strategic conversation",
-    "P3":    "Keep warm / follow up",
-}
-
-BUCKET_CTA = {
-    "P1":    "Plan a meeting",
-    "PILOT": "Plan a meeting",
-    "P2":    "Exchange details",
-    "P3":    "Exchange details",
-}
-
-def build_explainer_payload(viewer_id: str, counterparty_id: str, db) -&gt; dict:
-    """
-    Agent 5: assemble sanitized context payload for Agent 6.
-    Pulls from:
-      - enriched_profiles (Agent 1 output)
-      - pair_scores (Agent 2 + 3 output)
-      - match_buckets (Agent 4 output)
-    Returns payload safe to send to the LLM.
-    """
-    viewer     = db.get_profile(viewer_id)
-    cp         = db.get_profile(counterparty_id)
-    pair       = db.get_pair_scores(viewer_id, counterparty_id)
-    bucket_row = db.get_bucket(viewer_id, counterparty_id)
-
-    bucket: BucketType = bucket_row["bucket"]
-
-    top_contributors = _build_contributors(pair, viewer, cp)
-    evidence         = cp.get("traction_signals", []) + cp.get("audit_status", [])
-
-    return {
-        "viewer": {
-            "name":            viewer["name"],
-            "persona_type":    viewer["persona_type"],
-            "mandate_summary": viewer["mandate_summary"],
-            "primary_intent":  viewer["intent_extracted"],
-            "tags":            viewer["vertical_tags"],
-            "readiness_signals": _format_readiness(viewer),
-        },
-        "counterparty": {
-            "name":            cp["name"],
-            "persona_type":    cp["persona_type"],
-            "mandate_summary": cp["mandate_summary"],
-            "primary_intent":  cp["intent_extracted"],
-            "tags":            cp["vertical_tags"],
-            "traction_evidence": evidence,
-            "readiness_signals": _format_readiness(cp),
-        },
-        "bucket":           bucket,
-        "meeting_type":     BUCKET_BADGE[bucket],
-        "cta_allowed":      ["Plan a meeting", "Exchange details"],
-        "default_cta":      BUCKET_CTA[bucket],
-        "top_contributors": top_contributors,
-        "evidence_snippets": evidence,
-        "constraints":      db.get_event_constraints(),
-    }
-      </pre>
-    </div>
-
-    <!-- AGENT 6 -->
-    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin:22px 0 4px;">
-      Agent 6 — Explainer LLM <span class="badge" style="border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.08);color:var(--llm);">LLM Prompt</span>
-    </div>
-    <p class="section-body" style="margin-bottom:10px;">
-      Receives the clean payload from Agent 5 and returns structured JSON for the match card. The prompt is bucket-aware but never
-      exposes bucket codes or internal scores to attendees in the Proof of Match app.
-    </p>
-
-    <div class="prompt-tabs">
-      <button class="prompt-tab active" id="prompt-tab-simplified" onclick="setPromptTab('simplified')">
-        Simplified Prompt (recommended)
-      </button>
-      <button class="prompt-tab" id="prompt-tab-full" onclick="setPromptTab('full')">
-        Full Original Prompt
-      </button>
-    </div>
-
-    <div id="prompt-simplified" class="prompt-block">
-      <div class="prompt-header">
-        <span>System Prompt · Agent 6</span>
-        <span>⚡ LLM</span>
-      </div>
-      <pre class="prompt-pre">
-You write match card text for an executive networking app.
-Output ONLY valid JSON — no preamble, no markdown.
-
-HARD RULES:
-- Use ONLY facts in the input. Never invent numbers, clients, timelines, or certifications.
-- Never mention: MatchScore, DealReady, alpha/beta/gamma, P1/P2/P3/PILOT, "synergies", "alignment", "ecosystem".
-- Do not write "Both…" or "You both…". Use "You…" for viewer, third-person for counterparty.
-- No numeric scores or percentages.
-- Plain executive language. Skimmable in 8 seconds.
-
-MEETING TYPE → FRAMING RULE:
-  "High-confidence investment meeting" → capital transaction framing only. No pilot language.
-  "Pilot / sandbox meeting"           → operational/sandbox framing only. No investment language.
-  "Strategic conversation"            → insight/positioning framing. No capital urgency.
-  "Keep warm / follow up"             → low immediacy. Recommend "Exchange details".
-
-OUTPUT SCHEMA:
-{
-  "meeting_type_badge":      one of the four meeting types above,
-  "match_insight_headline":  ≤52 chars, concrete nouns, no hype,
-  "counterparty_one_liner":  ≤120 chars, identity + what they do (facts only),
-  "proof_chips":             exactly 3 items, each ≤24 chars, must be in input evidence,
-  "why_this_matters":        ≤260 chars, 2-3 sentences, viewer mandate + counterparty evidence,
-  "key_points":              exactly 3 bullets ≤110 chars each, each links viewer fact → counterparty fact,
-  "suggested_opener":        1 question ≤120 chars, actionable,
-  "cta_hint":                "Plan a meeting" or "Exchange details"
-}
-      </pre>
-    </div>
-
-    <div id="prompt-full" class="prompt-block" style="display:none;">
-      <div class="prompt-header">
-        <span>Full Specification (reference only)</span>
-        <span>⚡ LLM</span>
-      </div>
-      <pre class="prompt-pre">
-You are the Match Explanation Agent for the Proof of Match network.
-Your output appears on match cards in the attendee app.
-
-CORE PRINCIPLES:
-- Evidence only (no invented facts).
-- No internal model terms or bucket codes.
-- No hype or vague jargon.
-- Outcome-driven, mobile-first copy.
-
-[Full detailed spec omitted in UI; keep in code/docs if needed.]
-      </pre>
-    </div>
-
-    <!-- PYTHON CALLER + SCHEMA -->
-    <div class="two-col">
-      <div>
-        <div class="sub-label">Python caller — Agent 6</div>
-        <div class="code-shell">
-          <div class="code-shell-header">
-            <div class="code-shell-lang">python</div>
-            <div class="code-shell-dots">
-              <span style="background:#ff6b6b;"></span>
-              <span style="background:#f5a623;"></span>
-              <span style="background:#00e5a0;"></span>
+      function PocProd({ poc, prod }) {
+        const [view, setView] = useState("poc");
+        return (
+          <div style={{ border:`1px solid ${C.border}`, borderRadius:8, overflow:"hidden", margin:"10px 0" }}>
+            <div style={{ display:"flex", background:"#0a0a18", borderBottom:`1px solid ${C.border}` }}>
+              {[["poc","🧪 POC"],["prod","🏭 Production"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setView(k)}
+                  style={{ fontFamily:"DM Mono,monospace", fontSize:10.5, padding:"7px 16px", border:"none", background:"transparent", color:view===k?C.text:C.dim, cursor:"pointer", borderBottom:`2px solid ${view===k?"#f5a623":"transparent"}`, transition:"all .12s" }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div style={{ padding:"14px 16px", background:"#050510", fontSize:12, color:C.muted, lineHeight:1.78 }}>
+              {view==="poc" ? poc : prod}
             </div>
           </div>
-          <pre class="code-shell-pre">
-import anthropic, json
+        );
+      }
 
-client = anthropic.Anthropic()
+      function ScoreShell({ tag, name, method, def, children }) {
+        return (
+          <div>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:16 }}>
+              <div>
+                <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:C.muted, textTransform:"uppercase", letterSpacing:".12em", marginBottom:4 }}>{tag}</div>
+                <h2 style={{ fontFamily:"Syne,sans-serif", fontSize:22, fontWeight:700, color:C.text, lineHeight:1.2, marginBottom:8 }}>{name}</h2>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  <Badge type={method} />
+                </div>
+              </div>
+            </div>
+            <div style={{ background:"#0f0f1a", border:`1px solid ${C.border}`, borderRadius:8, padding:"12px 15px", marginBottom:16, fontSize:13, color:C.muted, lineHeight:1.75 }}>
+              <span style={{ color:C.text, fontFamily:"Syne,sans-serif", fontWeight:700 }}>Definition: </span>{def}
+            </div>
+            {children}
+          </div>
+        );
+      }
 
-def run_explainer_agent(payload: dict) -> dict:
-    """Call LLM explainer with sanitized payload."""
-    prompt = build_user_prompt(payload)
+      function TwoCol({ children }) {
+        return <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>{children}</div>;
+      }
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=800,
-        temperature=0,
-        system=EXPLAINER_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
+      function Sub({ text }) {
+        return <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:C.muted, textTransform:"uppercase", letterSpacing:".1em", margin:"14px 0 7px" }}>{text}</div>;
+      }
+
+      // ─── PIPELINE OVERVIEW ───────────────────────────────────────────────
+      function PipelinePanel({ goTab }) {
+        const agents = [
+          { id:"a1", label:"Agent 1", sub:"Individual Enrichment", color:"#a78bfa", scores:["credibility_score","fin_ready_score","ops_ready_score","tags","mandate_summary"], note:"Runs ONCE per attendee. Results cached. All pairwise agents read from cache.", cache:true },
+          { id:"a2", label:"Agent 2", sub:"Pairwise Scoring", color:"#38bdf8", scores:["PersonaFit(A,B)","ThematicFit(A,B)","IntentOverlap(A,B)","ComplementaryScore(A,B)","NonObviousnessScore(A,B)","CredibilityScore(A,B)","FinancialReady=min()","OpsReady=min()"], note:"Runs per directed pair. Reads individual scores from cache.", cache:false },
+          { id:"a3", label:"Agent 3", sub:"Scoring Engine", color:"#00e5a0", scores:["MatchScore = Σ(w×component)","RankScore = MS×(1+α×DR_B+β×DR_A)"], note:"Persona-aware weights. Different α/β/γ per persona type.", cache:false },
+          { id:"a4", label:"Agent 4", sub:"Bucket Assignment", color:"#f5a623", scores:["P1: MS≥0.70 AND FR≥0.70","PILOT: MS≥0.70 AND OR≥0.65 AND FR<0.70","P2: MS≥0.65 AND max(FR,OR)≥0.40","P3: MS≥0.40"], note:"Pure rules. No ML. Can be SQL CASE WHEN.", cache:false },
+        ];
+        const tools = [
+          { step:"Registration", tool:"Google Forms / Typeform / Custom", color:"#6c63ff", inputs:"free-text bio, tags, intent, stage, mandate" },
+          { step:"Enrichment APIs", tool:"LinkedIn API · Crunchbase · X/Twitter", color:"#38bdf8", inputs:"company data, funding history, connections" },
+          { step:"LLM Scoring", tool:"Claude API / GPT-4o (Agent 1 & 2)", color:"#a78bfa", inputs:"credibility, fin_ready, ops_ready, intent extraction" },
+          { step:"Embedding Model", tool:"text-embedding-3-large / BGE-M3", color:"#00e5a0", inputs:"NonObviousnessScore, IntentOverlap cosine sim" },
+          { step:"Vector Store", tool:"Pinecone / pgvector / Weaviate", color:"#ff6b6b", inputs:"Store profile embeddings, cosine similarity lookup" },
+          { step:"Cache Layer", tool:"Redis / Postgres", color:"#f5a623", inputs:"Individual scores cached per attendee_id" },
+          { step:"Scoring DB", tool:"Postgres / DuckDB", color:"#6c63ff", inputs:"Pairwise scores, bucket assignment, RankScore" },
+          { step:"Dashboard", tool:"Next.js + Supabase / Retool", color:"#00e5a0", inputs:"Organizer view, match cards, CTA generation" },
+        ];
+
+        const stageNote = [
+          ["fin_ready_score","Agent 1","Stage is a CONTEXT INPUT to the LLM prompt — not a direct weight. 'Series A' lowers fin_ready if not actively raising."],
+          ["credibility_score","Agent 1","Stage mentioned in rubric context. High-traction Seed > low-traction Series B."],
+          ["C-set pre-filter","Agent 2","Optional: stage can gate minimum eligibility for high-value pools (e.g. min Series A for P1 pool)."],
+          ["MatchScore","NOT used","Stage does not appear in any MatchScore weight vector."],
+          ["Bucket Assignment","NOT used","Bucket is driven by FinancialReady and OpsReady only — stage is never a bucket gate."],
+        ];
+
+        return (
+          <div>
+            <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#00e5a0", textTransform:"uppercase", letterSpacing:".18em", marginBottom:6 }}>Implementation Pipeline</div>
+            <h2 style={{ fontFamily:"Syne,sans-serif", fontSize:24, fontWeight:700, color:C.text, marginBottom:6 }}>Full Pipeline — Agents, Tools, Data Flow</h2>
+            <p style={{ fontSize:13, color:C.muted, lineHeight:1.75, marginBottom:22 }}>Click any score chip to jump to its detailed implementation. Each box shows the agent, its tool stack, and what it outputs.</p>
+
+            <div style={{ position:"relative", marginBottom:28 }}>
+              {agents.map((a, i)=>(
+                <div key={a.id} style={{ display:"flex", gap:14 }}>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center", width:40, flexShrink:0 }}>
+                    <div style={{ width:36, height:36, borderRadius:"50%", background:`${a.color}18`, border:`2px solid ${a.color}60`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <span style={{ fontFamily:"Syne,sans-serif", fontSize:11, fontWeight:800, color:a.color }}>A{i+1}</span>
+                    </div>
+                    {i<agents.length-1 && <div style={{ width:2, height:24, background:`${a.color}30`, margin:"4px 0" }}/>}
+                  </div>
+                  <div style={{ background:`${a.color}06`, border:`1px solid ${a.color}25`, borderRadius:10, padding:"14px 16px", flex:1, marginBottom: i<agents.length-1?8:0 }}>
+                    <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:8 }}>
+                      <div style={{ fontFamily:"Syne,sans-serif", fontSize:14, fontWeight:700, color:a.color }}>{a.label} — {a.sub}</div>
+                      {a.cache && <span style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#f5a623", background:"rgba(245,166,35,.08)", border:"1px solid rgba(245,166,35,.25)", borderRadius:4, padding:"1px 7px" }}>CACHED OUTPUT</span>}
+                    </div>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
+                      {a.scores.map(s=>(
+                        <span key={s} style={{ fontSize:11, padding:"3px 9px", borderRadius:4, background:"#16162a", color:C.muted, border:`1px solid ${C.border}`, fontFamily:"DM Mono,monospace", cursor:"default" }}>{s}</span>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:11.5, color:C.muted }}>{a.note}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#4a4a6a", textTransform:"uppercase", letterSpacing:".12em", marginBottom:12 }}>Tool Stack</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:24 }}>
+              {tools.map(t=>(
+                <div key={t.step} style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"12px 13px" }}>
+                  <div style={{ fontFamily:"DM Mono,monospace", fontSize:9, color:t.color, textTransform:"uppercase", marginBottom:4 }}>{t.step}</div>
+                  <div style={{ fontFamily:"Syne,sans-serif", fontSize:11.5, fontWeight:700, color:C.text, marginBottom:5 }}>{t.tool}</div>
+                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.55 }}>{t.inputs}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#f5a623", textTransform:"uppercase", letterSpacing:".12em", marginBottom:10 }}>Stage Flag — Where It Is (and Is Not) Used</div>
+            <div style={{ border:`1px solid rgba(245,166,35,.2)`, borderRadius:8, overflow:"hidden" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                <thead>
+                  <tr>{["Score","Agent","Stage Flag Role"].map(h=><th key={h} style={{ background:"#0a0a18", color:C.dim, padding:"8px 12px", border:`1px solid ${C.border}`, textAlign:"left", fontFamily:"DM Mono,monospace", fontSize:10 }}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {stageNote.map(([score,agent,note],i)=>(
+                    <tr key={i} style={{ background: i%2===0?"#0f0f1a":"#0a0a18" }}>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, fontFamily:"DM Mono,monospace", color: score.startsWith("Match")||score.startsWith("Bucket")?"#ff6b6b":"#00e5a0", fontSize:11 }}>{score}</td>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, color:"#a78bfa", fontFamily:"DM Mono,monospace", fontSize:11 }}>{agent}</td>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, color:C.muted }}>{note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ background:"rgba(245,166,35,.06)", border:"1px solid rgba(245,166,35,.2)", borderRadius:7, padding:"12px 15px", marginTop:12, fontSize:12.5, color:C.muted, lineHeight:1.75 }}>
+              <span style={{ color:"#f5a623" }}>◆ Stage flag key rule: </span>Stage (Seed/Series A/Series B etc.) is a CONTEXT signal fed into LLM prompts for fin_ready and credibility scoring. It is <strong style={{ color:C.text }}>never</strong> a direct weight in MatchScore and <strong style={{ color:C.text }}>never</strong> a gate in bucket assignment. Actual traction signals (institutional clients, audited code, live product) are what determine scores — not stage labels.
+            </div>
+          </div>
+        );
+      }
+
+      // ─── CREDIBILITY SCORE ───────────────────────────────────────────────
+      function CredPanel() {
+        return (
+          <ScoreShell tag="Agent 1 · Individual Enrichment" name="CredibilityScore" method="LLM"
+            def="A normalized quality signal (0–1) computed once per attendee. Measures how credible this person is in their stated role, using verifiable signals. Different rubric per persona type. Averaged for a pair in Agent 2.">
+            <Sub text="Input Fields — Agent 1 Enrichment" />
+            <FieldTable fields={[
+              { name:"persona_type", type:"enum", src:"Registration form", req:true },
+              { name:"stage", type:"string", src:"Registration / Crunchbase", req:false },
+              { name:"aum_deployed", type:"string", src:"Registration / LinkedIn", req:false },
+              { name:"fund_vintage", type:"int", src:"Registration / Crunchbase", req:false },
+              { name:"institutional_clients", type:"list[string]", src:"Registration / LinkedIn", req:false },
+              { name:"audit_status", type:"string", src:"Registration (free-text)", req:false },
+              { name:"revenue_arr", type:"string", src:"Registration / Crunchbase", req:false },
+              { name:"traction_signals", type:"list[string]", src:"Registration free-text", req:true },
+              { name:"regulatory_programs", type:"list[string]", src:"Registration / LinkedIn", req:false },
+            ]} />
+            <Sub text="LLM Implementation" />
+            <PromptBlock
+              system={`You are a credibility evaluator for an institutional finance event matching system.
+Score this attendee's credibility on a 0.00–1.00 scale based ONLY on verifiable signals.
+
+RUBRIC BY PERSONA TYPE:
+
+INVESTOR rubric (weight order):
+  1. AUM actively earmarked + deployment track record (0.30)
+  2. Deals closed in this specific vertical in past 24 months (0.25)
+  3. Fund vintage — recent funds in deployment window score higher (0.20)
+  4. Portfolio quality and follow-on capacity (0.15)
+  5. GP reputation / institutional backing (0.10)
+
+FOUNDER rubric (weight order):
+  1. Institutional clients (named banks, asset managers, funds) (0.30)
+  2. Audited code / security reviews from known auditors (0.25)
+  3. Revenue / ARR — hard numbers preferred over estimates (0.20)
+  4. Live product in production (not testnet/MVP) (0.15)
+  5. Pilot contracts or MoUs with named institutions (0.10)
+
+REGULATOR rubric (weight order):
+  1. Institution seniority (G7 central bank > regional regulator) (0.30)
+  2. Active sandbox programs or published guidance (0.25)
+  3. MoU history or formal pilot engagements (0.25)
+  4. Working group membership (0.20)
+
+IMPORTANT:
+- Stage label (Seed, Series A, etc.) is CONTEXT only — it does NOT directly determine score.
+- A Seed company with 2 named enterprise clients and a Trail of Bits audit outscores
+  a Series B with no verifiable traction.
+- Return ONLY a JSON object. No preamble.`}
+              user={`Attendee profile:
+persona_type: {persona_type}
+stage: {stage}
+bio_free_text: {bio}
+traction_signals: {traction_signals}
+institutional_clients: {institutional_clients}
+audit_status: {audit_status}
+aum_or_revenue: {aum_or_revenue}
+fund_vintage: {fund_vintage}
+
+Return JSON:
+{
+  "credibility_score": <float 0.00-1.00>,
+  "signals_found": [<list of signals that drove the score>],
+  "missing_signals": [<list of signals absent that would have raised the score>],
+  "reasoning": "<1-2 sentence explanation>"
+}`} />
+            <TwoCol>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`{
+  "credibility_score": 0.84,
+  "signals_found": [
+    "Live with European banks (2 named)",
+    "Audited contracts (Trail of Bits)",
+    "$40M Series B validated"
+  ],
+  "missing_signals": ["Revenue ARR not provided"],
+  "reasoning": "Strong institutional traction and audit..."
+}`} note="credibility_score cached in attendee record. Used in Agent 2 as avg(cred_A, cred_B)." />
+                <Sub text="When Used" />
+                <UsedIn items={["Agent 2: CredibilityScore(A,B) = avg(cred_A, cred_B)","MatchScore: 10% weight for all persona types","Dashboard: shown as trust signal on match card"]} />
+              </div>
+              <div>
+                <Sub text="POC vs Production" />
+                <PocProd
+                  poc={<span>Run LLM call per attendee at registration time. Store result in a simple Postgres column <code style={{ color:"#00e5a0" }}>attendees.credibility_score FLOAT</code>. Use Claude claude-sonnet-4-6 with temperature=0 for determinism. ~50–200 tokens per call. <br/><br/>Cost estimate: 500 attendees × ~500 tokens = ~250K tokens ≈ $0.75 at Sonnet pricing.</span>}
+                  prod={<span>Async enrichment worker (Celery/Bull queue). Re-score on profile update event. Store in enriched_profiles table with score_version and scored_at timestamp. A/B test prompt versions. Add confidence interval via 3-sample majority vote for high-stakes decisions. Cache invalidation on Crunchbase/LinkedIn webhook updates.</span>}
+                />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── FIN_READY + OPS_READY (Individual) ─────────────────────────────
+      function ReadyPanel() {
+        const [view, setView] = useState("fin");
+        return (
+          <div>
+            <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+              {[["fin","fin_ready_score"],["ops","ops_ready_score"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setView(k)}
+                  style={{ fontFamily:"DM Mono,monospace", fontSize:11, padding:"7px 14px", borderRadius:6, border:`1px solid ${view===k?"#00e5a0":C.border}`, background:view===k?"rgba(0,229,160,.08)":C.surface, color:view===k?"#00e5a0":C.dim, cursor:"pointer" }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {view==="fin" ? (
+              <ScoreShell tag="Agent 1 · Individual Enrichment" name="fin_ready_score (individual)" method="LLM"
+                def="How financially ready is this specific attendee to execute a capital transaction in the next 6–12 months? Measures willingness + capacity to deploy or receive capital — NOT whether a pairwise match is ready (that is FinancialReady = min(), computed in Agent 2).">
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"persona_type", type:"enum", src:"Registration", req:true },
+                  { name:"fundraising_status", type:"string", src:"Registration free-text", req:true },
+                  { name:"check_size_range", type:"string", src:"Registration", req:false },
+                  { name:"deployment_timeline", type:"string", src:"Registration", req:false },
+                  { name:"capital_constraints", type:"string", src:"Registration free-text", req:false },
+                  { name:"stage", type:"string", src:"Registration / Crunchbase", req:false },
+                  { name:"mandate_type", type:"string", src:"Registration", req:true },
+                ]} />
+                <Sub text="LLM Implementation" />
+                <PromptBlock
+                  system={`You evaluate financial transaction readiness for event matching.
+
+Score how ready this attendee is to execute a capital transaction (0.00–1.00).
+
+INVESTOR scoring:
+  HIGH (0.80–1.00): Actively deploying, fund in deployment window, check size defined, no LP lock
+  MEDIUM (0.50–0.79): Fund raised but constraints exist (approval needed, LP consent required)  
+  LOW (0.20–0.49): Fund raising, no clear deployment mandate, secondary market only
+  VERY LOW (0.00–0.19): No active mandate, observing only
+
+FOUNDER scoring:
+  HIGH (0.80–1.00): Actively raising stated round, term sheet stage, clear ask defined
+  MEDIUM (0.50–0.79): Considering raise, exploring options, secondary not primary intent
+  LOW (0.20–0.49): Not actively raising — pilot-first, partnership-first, or not raising
+  VERY LOW (0.00–0.19): Explicitly not seeking capital
+
+IMPORTANT:
+- "Pilot-first" founders score LOW fin_ready even if capital could theoretically be raised.
+- Stage label is CONTEXT only — a Series B not raising scores lower than a Series A actively raising.
+- Return JSON only.`}
+                  user={`Attendee:
+persona_type: {persona_type}
+stage: {stage}
+registration_intent: {registration_intent_text}
+fundraising_status: {fundraising_status}
+check_size_or_raise_target: {check_size}
+deployment_or_close_timeline: {timeline}
+mandate_constraints: {constraints}
+
+Return:
+{
+  "fin_ready_score": <float 0.00-1.00>,
+  "primary_signal": "<main reason for score>",
+  "stage_context": "<how stage influenced interpretation>",
+  "reasoning": "<1-2 sentences>"
+}`} />
+                <TwoCol>
+                  <div>
+                    <Sub text="Output + Example" />
+                    <OutputBox schema={`// James (pilot-first founder)
+{
+  "fin_ready_score": 0.55,
+  "primary_signal": "capital-raise stated as secondary; primary intent is pilots",
+  "stage_context": "Series A range — actively raising possible but not stated primary goal",
+  "reasoning": "NexaLayer is pilot-first. Capital is acknowledged but not the primary ask."
+}
+
+// Amara (investor, actively deploying)
+{
+  "fin_ready_score": 0.91,
+  "primary_signal": "$200M earmarked, fund vintage 2021 in peak deployment window",
+  "reasoning": "Full mandate, active deployment, no stated constraints."
+}`} />
+                    <Sub text="When Used" />
+                    <UsedIn items={["Agent 2: FinancialReady(A,B) = min(fin_A, fin_B)","RankScore: DealReady_B when γ=fin (investor config)","Stage flag is context input here only"]} />
+                  </div>
+                  <div>
+                    <Sub text="POC vs Production" />
+                    <PocProd
+                      poc="Simple LLM call at registration. One call per attendee, store in attendees.fin_ready_score. Rerun if attendee updates their registration."
+                      prod="Enrichment pipeline triggers re-score on: (1) registration form update, (2) Crunchbase funding event detected, (3) manual organizer override. Store score + version + timestamp. Add explanation field for dashboard display." />
+                  </div>
+                </TwoCol>
+              </ScoreShell>
+            ) : (
+              <ScoreShell tag="Agent 1 · Individual Enrichment" name="ops_ready_score (individual)" method="LLM"
+                def="How operationally ready is this attendee to engage in a pilot, sandbox, or technical integration in the next 3–6 months? Distinct from fin_ready — captures operational capacity independent of capital intent.">
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"product_status", type:"enum", src:"Registration", req:true },
+                  { name:"sandbox_seeking", type:"bool", src:"Registration", req:true },
+                  { name:"pilot_timeline", type:"string", src:"Registration free-text", req:false },
+                  { name:"regulatory_status", type:"string", src:"Registration free-text", req:false },
+                  { name:"integration_capacity", type:"string", src:"Registration free-text", req:false },
+                  { name:"product_live", type:"bool", src:"Registration", req:true },
+                  { name:"existing_pilots", type:"list[string]", src:"Registration / Crunchbase", req:false },
+                ]} />
+                <Sub text="LLM Implementation" />
+                <PromptBlock
+                  system={`You evaluate operational readiness for event pilot/sandbox matching.
+
+Score how ready this attendee is to engage in a concrete pilot or sandbox engagement (0.00–1.00).
+
+HIGH (0.80–1.00):
+  - Product live in production or testnet with real users
+  - Actively seeking sandbox or pilot partners
+  - Defined pilot timeline (specific quarter)
+  - Existing regulatory clearance or MiCA-alignment
+  
+MEDIUM (0.50–0.79):
+  - MVP or testnet exists, not yet production
+  - Open to pilots but no defined timeline
+  - Some regulatory work underway
+
+LOW (0.20–0.49):
+  - Early stage product (< MVP)
+  - No stated pilot interest
+  - Regulatory status unclear
+
+NOTE: This score applies to ALL persona types.
+  - Investors: measures capacity to provide operational support, not just capital
+  - Regulators: measures capacity to run sandbox programs or issue guidance
+  - Founders: measures product readiness for a live pilot
+
+Stage flag is CONTEXT only. Return JSON.`}
+                  user={`Attendee:
+persona_type: {persona_type}
+product_status: {product_status}  
+product_live: {product_live}
+sandbox_seeking: {sandbox_seeking}
+pilot_timeline: {pilot_timeline}
+regulatory_clearance: {regulatory_status}
+existing_pilots: {existing_pilots}
+registration_free_text: {bio_text}
+
+Return:
+{
+  "ops_ready_score": <float 0.00-1.00>,
+  "key_signal": "<main driver>",
+  "cold_start_note": "<what signals would raise this score>",
+  "reasoning": "<1-2 sentences>"
+}`} />
+                <TwoCol>
+                  <div>
+                    <Sub text="Output + Example" />
+                    <OutputBox schema={`// James (live testnet, sandbox-seeking)
+{
+  "ops_ready_score": 0.82,
+  "key_signal": "live testnet with compliance modules, MiCA-aligned, sandbox-seeking",
+  "cold_start_note": "Production deployment would raise to 0.90+",
+  "reasoning": "NexaLayer has live testnet and compliance modules. Actively seeking pilots with regulated financial institutions."
+}`} />
+                    <Sub text="Cold-Start Note" />
+                    <div style={{ background:"rgba(56,189,248,.06)", border:"1px solid rgba(56,189,248,.2)", borderRadius:7, padding:"10px 14px", fontSize:12, color:C.muted, lineHeight:1.7 }}>
+                      ops_ready can be scored from registration form alone (product_live, sandbox_seeking checkboxes). This enables cold-start scoring even before enrichment APIs return data — unlike credibility_score which requires verifiable external signals.
+                    </div>
+                  </div>
+                  <div>
+                    <Sub text="POC vs Production" />
+                    <PocProd
+                      poc="Scored at registration time from checkboxes + free-text. Two-step: (1) parse sandbox_seeking, product_live as deterministic booleans, (2) LLM for nuance on timeline/regulatory context."
+                      prod="Hybrid: deterministic base score from boolean fields + LLM adjustment layer. Store base_ops_score (deterministic) and llm_ops_adjustment (±0.20 range). Allows fast cold-start with deterministic pass and async LLM refinement." />
+                  </div>
+                </TwoCol>
+              </ScoreShell>
+            )}
+          </div>
+        );
+      }
+
+      // ─── PERSONA FIT ─────────────────────────────────────────────────────
+      function PersonaFitPanel() {
+        return (
+          <ScoreShell tag="Agent 2 · Pairwise Scoring" name="PersonaFit(A, B)" method="Deterministic"
+            def="Structural fit between two persona type combinations. Captures whether this pair configuration is inherently able to generate value, independent of what either party says or does. Completely deterministic — same pair type always returns the same score.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"persona_type_A", type:"enum[investor|founder|regulator]", src:"Enriched profile (Agent 1)", req:true },
+                  { name:"persona_type_B", type:"enum[investor|founder|regulator]", src:"Enriched profile (Agent 1)", req:true },
+                ]} />
+                <Sub text="Implementation (Python)" />
+                <SyntaxCode lang="python">{`# PersonaFit lookup table
+PERSONA_FIT: dict[tuple, float] = {
+    ("investor",  "founder"):   0.90,  # capital meets product
+    ("founder",   "investor"):  0.90,  # symmetric
+    ("investor",  "investor"):  0.70,  # co-invest / LP
+    ("founder",   "investor"):  0.90,
+    ("regulator", "founder"):   0.85,  # sandbox candidate
+    ("founder",   "regulator"): 0.85,
+    ("regulator", "investor"):  0.60,  # market intelligence
+    ("investor",  "regulator"): 0.60,
+    ("founder",   "founder"):   0.40,  # ecosystem only
+    ("regulator", "regulator"): 0.50,  # policy alignment
+}
+
+def persona_fit(type_a: str, type_b: str) -> float:
+    key = (type_a.lower(), type_b.lower())
+    return PERSONA_FIT.get(key, 0.35)
+
+# Usage in Agent 2
+pf = persona_fit(attendee_a.persona_type, 
+                 attendee_b.persona_type)
+# Amara(investor) × James(founder) → 0.90
+# Note: source uses 0.85 for standard investor-founder;
+# 0.90 reserved for perfectly stage-matched pairs`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`# Single float, no LLM call
+pf_score: float  # 0.00 – 1.00
+
+# Example
+persona_fit("investor", "founder") → 0.90
+persona_fit("investor", "investor") → 0.70`} note="No explanation field needed — fully deterministic. PersonaFit carries 30% weight in investor MatchScore." />
+                <Sub text="When Used" />
+                <UsedIn items={["Agent 2: MatchScore input (30% investor / 25% founder / 20% regulator)","C-set pre-filter: PersonaFit must pass minimum threshold before full pairwise scoring","ComplementaryScore input"]} />
+                <Sub text="POC vs Production" />
+                <PocProd
+                  poc="Python dict lookup. Zero latency, zero cost. Works as-is in production too."
+                  prod={`Same dict, but load from database config table so organizers can adjust weights without code deploy:
+
+CREATE TABLE persona_fit_weights (
+  type_a VARCHAR(20),
+  type_b VARCHAR(20),
+  fit_score FLOAT,
+  updated_at TIMESTAMP
+);`} />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── THEMATIC FIT ────────────────────────────────────────────────────
+      function ThematicPanel() {
+        return (
+          <ScoreShell tag="Agent 2 · Pairwise Scoring" name="ThematicFit(A, B)" method="Embedding"
+            def="How much do the enriched vertical, regulatory, and geographic tags of two attendees overlap? Computed as weighted Jaccard similarity across three tag dimensions. Measures topic alignment independent of persona type or stated intent.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"vertical_tags_A/B", type:"list[str]", src:"Enrichment + registration", req:true },
+                  { name:"regulatory_tags_A/B", type:"list[str]", src:"Enrichment (MiCA, KYC, CBDC...)", req:false },
+                  { name:"geo_tags_A/B", type:"list[str]", src:"Registration / LinkedIn", req:false },
+                ]} />
+                <Sub text="Implementation (Python)" />
+                <SyntaxCode lang="python">{`from typing import set
+
+def jaccard(a: set, b: set) -> float:
+    if not a and not b: return 0.0
+    return len(a & b) / len(a | b)
+
+def thematic_fit(
+    profile_a: dict,
+    profile_b: dict,
+    dim_weights: dict = None
+) -> float:
+    """
+    Weighted Jaccard across three tag dimensions.
+    Regulatory tags weighted higher for regulator personas.
+    """
+    weights = dim_weights or {
+        "vertical":   0.50,
+        "regulatory": 0.35,
+        "geo":        0.15,
+    }
+
+    scores = {}
+    for dim, w in weights.items():
+        tags_a = set(profile_a.get(f"{dim}_tags", []))
+        tags_b = set(profile_b.get(f"{dim}_tags", []))
+        scores[dim] = jaccard(tags_a, tags_b)
+
+    tf = sum(weights[d] * scores[d] for d in weights)
+    return round(tf, 4)
+
+# Example: Amara × James
+# vertical:   {infra} / {L2, compliance, KYC, AML, infra} → 1/6 ≈ 0.17
+# regulatory: {} / {MiCA, CBDC} → 0/2 = 0.00
+# geo:        {UAE} / {EU} → 0.0
+# Weighted: 0.50×0.17 + 0.35×0.00 + 0.15×0.0 ≈ 0.09
+# After LLM boost for regulatory relevance → ~0.55`}</SyntaxCode>
+                <div style={{ background:"rgba(56,189,248,.06)", border:"1px solid rgba(56,189,248,.2)", borderRadius:7, padding:"10px 14px", margin:"10px 0", fontSize:12, color:C.muted, lineHeight:1.7 }}>
+                  <span style={{ color:"#38bdf8" }}>Note: </span> Raw Jaccard is low for Amara×James (different verticals). The final ThematicFit = 0.55 includes an LLM-assisted tag relevance boost: tags like [MiCA, CBDC] are recognized as semantically relevant to Amara's institutional DeFi thesis even without exact tag match.
+                </div>
+              </div>
+              <div>
+                <Sub text="Enhanced: Embedding-based tag similarity" />
+                <SyntaxCode lang="python">{`from sentence_transformers import SentenceTransformer
+import numpy as np
+
+model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+
+def tag_cosine_sim(tags_a: list, tags_b: list) -> float:
+    """
+    Encode tag lists as averaged embeddings.
+    Better than Jaccard for semantically related tags
+    (e.g. 'custody' vs 'settlement' are related but
+     Jaccard gives 0).
+    """
+    if not tags_a or not tags_b:
+        return 0.0
+    emb_a = model.encode(" ".join(tags_a))
+    emb_b = model.encode(" ".join(tags_b))
+    return float(np.dot(emb_a, emb_b) / 
+                (np.linalg.norm(emb_a) * np.linalg.norm(emb_b)))`}</SyntaxCode>
+                <Sub text="POC vs Production" />
+                <PocProd
+                  poc="Use Jaccard on raw tag strings. Fast, zero cost. Good enough for POC — ThematicFit is a 20% weight, imprecision tolerable at this stage."
+                  prod="Hybrid: (1) Jaccard for vertical tags, (2) embedding cosine similarity for regulatory and thematic tags where semantic relationships matter (MiCA ↔ CBDC ↔ KYC all related). Store tag embeddings in pgvector. Pre-compute all pairwise TF for registered attendees nightly." />
+                <Sub text="When Used" />
+                <UsedIn items={["MatchScore: 20% investor / 20% founder / 30% regulator","ComplementaryScore input","C-set pre-filter: minimum ThematicFit before full scoring"]} />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── INTENT OVERLAP ──────────────────────────────────────────────────
+      function IntentPanel() {
+        return (
+          <ScoreShell tag="Agent 2 · Pairwise Scoring" name="IntentOverlap(A, B)" method="LLM"
+            def="How aligned are the EXPLICIT, self-stated goals of two attendees? Extracted from registration free-text by an LLM, then compared via embedding cosine similarity. Captures what attendees SAY they want — the surface / explicit layer.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"registration_free_text_A/B", type:"string", src:"Registration form", req:true },
+                  { name:"looking_for_field_A/B", type:"string", src:"Registration structured field", req:true },
+                  { name:"persona_type_A/B", type:"enum", src:"Enriched profile", req:true },
+                ]} />
+                <Sub text="Step 1: LLM Intent Extraction" />
+                <PromptBlock
+                  system={`Extract a single, structured intent statement from this event registration profile.
+The intent statement should capture:
+1. Primary goal (what they most want from this event)
+2. Specifics (amounts, stages, sectors, timelines where stated)
+3. Secondary goal (if clearly stated)
+
+Do NOT infer goals. Only extract what is explicitly stated.
+Return a single sentence of max 50 words. No preamble.`}
+                  user={`Attendee persona type: {persona_type}
+Registration "What are you looking for" field: {looking_for}
+Bio/description: {bio}
+
+Return a single intent statement starting with an action verb.
+Example: "Deploy $200M into RWA and infrastructure at Series B+, targeting custody and settlement platforms in EU and MENA."`} />
+                <Sub text="Step 2: Cosine Similarity" />
+                <SyntaxCode lang="python">{`# After extracting intent strings from both profiles:
+def intent_overlap(intent_a: str, intent_b: str) -> float:
+    """Cosine similarity of extracted intent embeddings."""
+    emb_a = embed_model.encode(intent_a)
+    emb_b = embed_model.encode(intent_b)
+    cos_sim = np.dot(emb_a, emb_b) / (
+        np.linalg.norm(emb_a) * np.linalg.norm(emb_b)
     )
+    # Map to 0-1 range (cosine can be negative)
+    return float(max(0, cos_sim))
 
-    raw = response.content[0].text.strip()
-    if raw.startswith("
+# Example scores:
+# "Deploy $200M into RWA/infra Series B+"
+# vs "Find banks to pilot NexaLayer. Capital secondary."
+# → cos_sim ≈ 0.62 (partial overlap on infra sector)
+
+# vs "Raise $40M Series B from SWF/growth VC"
+# → cos_sim ≈ 0.95 (near-perfect alignment)`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`{
+  "intent_A": "Deploy $200M into RWA infrastructure at Series B+",
+  "intent_B": "Find banks and asset managers to pilot NexaLayer compliance L2",
+  "intent_overlap_score": 0.62,
+  "overlap_reason": "Both reference infrastructure and institutional actors; primary goals differ (capital vs pilots)"
+}`} />
+                <Sub text="When Used" />
+                <UsedIn items={["MatchScore: 25% investor / 25% founder / 30% regulator","ComplementaryScore input","Agent 1 stores intent_embedding for reuse in NonObviousnessScore"]} />
+                <Sub text="POC vs Production" />
+                <PocProd
+                  poc="Two LLM calls per pair for intent extraction, then cosine similarity with text-embedding-3-small. Store extracted intents per attendee to avoid re-extraction."
+                  prod="Intent extraction runs once per attendee in Agent 1 (cached). Agent 2 only does cosine similarity (fast, no LLM call). Pre-compute all pairwise intent_overlap for registered attendees using batched embedding cosine. Store in pairs table. Update on registration change." />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── COMPLEMENTARY SCORE ────────────────────────────────────────────
+      function CompPanel() {
+        return (
+          <ScoreShell tag="Agent 2 · Pairwise Scoring" name="ComplementaryScore(A, B)" method="Composite"
+            def="A weighted composite of PersonaFit, IntentOverlap, and ThematicFit. ONE input to MatchScore (15% weight). Also the PRIMARY filter for C-set candidate generation — pairs with high ComplementaryScore form the high-precision candidate pool.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"PersonaFit(A,B)", type:"float", src:"Agent 2 deterministic lookup", req:true },
+                  { name:"IntentOverlap(A,B)", type:"float", src:"Agent 2 LLM + embedding", req:true },
+                  { name:"ThematicFit(A,B)", type:"float", src:"Agent 2 Jaccard/embedding", req:true },
+                ]} />
+                <Sub text="Implementation (Python)" />
+                <SyntaxCode lang="python">{`def complementary_score(
+    pf: float,   # PersonaFit
+    io: float,   # IntentOverlap
+    tf: float,   # ThematicFit
+) -> float:
+    """
+    Weighted composite of structural + explicit + thematic signals.
+    Used both as:
+    1. Input to MatchScore (15% weight)
+    2. Primary C-set candidate filter
+    """
+    weights = {"pf": 0.40, "io": 0.35, "tf": 0.25}
+    score = weights["pf"]*pf + weights["io"]*io + weights["tf"]*tf
+    return round(score, 4)
+
+# C-set generation: filter pairs by ComplementaryScore
+C_SET_THRESHOLD = 0.60  # tune based on event size
+
+def build_c_set(
+    attendees: list,
+    scores: dict,
+    threshold: float = C_SET_THRESHOLD
+) -> list:
+    """
+    Build high-precision candidate pool.
+    Pre-filters by PersonaFit ≥ 0.50 to avoid
+    scoring clearly incompatible pairs.
+    """
+    c_set = []
+    for a in attendees:
+        for b in attendees:
+            if a.id == b.id: continue
+            pf = persona_fit(a.type, b.type)
+            if pf < 0.50: continue   # pre-filter
+            tf = thematic_fit(a, b)
+            if tf < 0.10: continue   # minimal topic overlap
+            io = intent_overlap(a.intent, b.intent)
+            cs = complementary_score(pf, io, tf)
+            if cs >= threshold:
+                c_set.append((a.id, b.id, cs))
+    return sorted(c_set, key=lambda x: -x[2])
+
+# Example:
+# Amara × Marcus: PF=0.90, IO=0.95, TF=0.88
+# CS = 0.40×0.90 + 0.35×0.95 + 0.25×0.88 = 0.92
+# → enters C-set ✓
+
+# Amara × James: PF=0.85, IO=0.62, TF=0.55
+# CS = 0.40×0.85 + 0.35×0.62 + 0.25×0.55 = 0.69
+# → borderline, may enter via N-set instead`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`{
+  "complementary_score": 0.92,
+  "components": {
+    "persona_fit": 0.90,
+    "intent_overlap": 0.95,
+    "thematic_fit": 0.88
+  },
+  "c_set_eligible": true  // cs >= threshold
+}`} note="ComplementaryScore is a pure formula — no LLM call. Latency: microseconds." />
+                <Sub text="When Used" />
+                <UsedIn items={["C-set candidate pool generation (primary filter)","MatchScore: 15% weight all persona types","Indirectly: high CS → pair almost always reaches final scoring"]} />
+                <Sub text="POC vs Production" />
+                <PocProd
+                  poc="Pure Python formula. Run on all pairs above persona_fit threshold. For 500 attendees: 500×499 = ~250K directed pairs, but PersonaFit pre-filter reduces to ~50K. Fast enough synchronously."
+                  prod="Pre-compute C-set nightly and on registration update. Store in candidate_pairs table with cs_score. Agent 2 full scoring only runs on pairs in candidate_pairs — reduces full scoring load by ~80% vs all-pairs." />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── NON OBVIOUSNESS SCORE ───────────────────────────────────────────
+      function NoPanel() {
+        return (
+          <ScoreShell tag="Agent 2 · Pairwise Scoring" name="NonObviousnessScore(A, B)" method="Embedding"
+            def="Semantic similarity of the PROBLEM-SPACE embeddings of two attendees, penalized when their explicit tag overlap is already high. Fires when two attendees are solving the same underlying problem from different sectors — the discovery signal. Suppressed when the match is already obvious (high tag overlap = nothing to discover).">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"profile_embedding_A/B", type:"vector[1536]", src:"Agent 1 embedding (cached)", req:true },
+                  { name:"all_tags_A/B", type:"list[str]", src:"Agent 1 enrichment (cached)", req:true },
+                  { name:"vertical_tags_A/B", type:"list[str]", src:"Subset of tags", req:true },
+                ]} />
+                <Sub text="Embedding Generation (Agent 1)" />
+                <SyntaxCode lang="python">{`# In Agent 1 — run once per attendee, cache embedding
+from openai import OpenAI
+client = OpenAI()
+
+def generate_profile_embedding(profile: dict) -> list[float]:
+    """
+    Encode the full enriched profile as a problem-space embedding.
+    Not just bio — include vertical, customers, use-cases, competitors.
+    Goal: capture the PROBLEM being solved, not the stated intent.
+    """
+    problem_space_text = f"""
+    Role: {profile['role']}
+    Organization: {profile['org']}
+    Industry vertical: {', '.join(profile.get('vertical_tags', []))}
+    Regulatory context: {', '.join(profile.get('regulatory_tags', []))}
+    Target customers: {profile.get('target_customers', '')}
+    Core use-cases: {profile.get('use_cases', '')}
+    Key technology: {profile.get('tech_stack', '')}
+    Problem being solved: {profile.get('bio', '')}
+    """.strip()
+
+    response = client.embeddings.create(
+        model="text-embedding-3-large",
+        input=problem_space_text
+    )
+    return response.data[0].embedding  # 3072-dim vector`}</SyntaxCode>
+                <Sub text="NonObviousnessScore Calculation (Agent 2)" />
+                <SyntaxCode lang="python">{`import numpy as np
+
+def cosine_sim(a: list, b: list) -> float:
+    a, b = np.array(a), np.array(b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+def tag_overlap_penalty(tags_a: list, tags_b: list) -> float:
+    """
+    Jaccard similarity of ALL tags as penalty signal.
+    High overlap = the match is obvious = penalize discovery score.
+    """
+    a, b = set(tags_a), set(tags_b)
+    if not a and not b: return 0.0
+    return len(a & b) / len(a | b)
+
+def non_obviousness_score(
+    embed_a: list,
+    embed_b: list,
+    tags_a: list,
+    tags_b: list,
+    penalty_weight: float = 0.8
+) -> float:
+    """
+    semantic_sim × (1 - penalty_weight × tag_overlap)
+    
+    High when: problem-spaces similar AND tags different
+    Low when:  tags already overlap heavily (obvious match)
+    """
+    sem_sim = cosine_sim(embed_a, embed_b)
+    # Normalize cosine to 0-1 range
+    sem_sim = max(0.0, sem_sim)
+    
+    penalty = tag_overlap_penalty(tags_a, tags_b)
+    no_score = sem_sim * (1 - penalty_weight * penalty)
+    return round(max(0.0, no_score), 4)
+
+# Amara × James:
+# sem_sim ≈ 0.72 (both in institutional DeFi infra space)
+# tag_overlap ≈ 0.14 (only {infra, institutional} shared)
+# penalty = 0.8 × 0.14 = 0.11
+# NO = 0.72 × (1 - 0.11) ≈ 0.64 → normalized to ~0.55
+
+# Amara × Marcus:
+# sem_sim ≈ 0.88 (very similar sectors)
+# tag_overlap ≈ 0.50 (RWA, infra, institutional, custody)
+# penalty = 0.8 × 0.50 = 0.40
+# NO = 0.88 × (1 - 0.40) ≈ 0.53 → suppressed to ~0.12`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`{
+  "non_obviousness_score": 0.55,
+  "semantic_similarity": 0.72,
+  "tag_overlap_penalty": 0.14,
+  "discovery_signal": true  // NO > 0.40 AND tag_overlap < 0.25
+}
+
+// Amara × Marcus (suppressed):
+{
+  "non_obviousness_score": 0.12,
+  "semantic_similarity": 0.88,
+  "tag_overlap_penalty": 0.50,
+  "discovery_signal": false  // suppressed — match is obvious
+}`} />
+                <Sub text="N-set Generation" />
+                <SyntaxCode lang="python">{`N_SET_THRESHOLD = 0.40
+
+def build_n_set(attendees, threshold=N_SET_THRESHOLD):
+    """
+    N-set: discovery matches where NO fires.
+    Looser filter — crosses vertical boundaries.
+    """
+    n_set = []
+    for a in attendees:
+        for b in attendees:
+            if a.id == b.id: continue
+            no = non_obviousness_score(
+                a.profile_embedding,
+                b.profile_embedding,
+                a.all_tags, b.all_tags
+            )
+            if no >= threshold:
+                n_set.append((a.id, b.id, no))
+    return sorted(n_set, key=lambda x: -x[2])`}</SyntaxCode>
+                <Sub text="When Used" />
+                <UsedIn items={["N-set candidate pool generation (primary filter)","MatchScore: 0% investor / 5% founder / 0% regulator (discovery lane only)","Explains cross-sector recommendations in dashboard"]} />
+                <Sub text="POC vs Production" />
+                <PocProd
+                  poc="Generate embeddings once per attendee using OpenAI text-embedding-3-small (1536-dim). Store in Postgres ARRAY(FLOAT) column. Compute cosine similarity in Python for all N pairs."
+                  prod="Store embeddings in pgvector (Postgres extension). Use pgvector cosine_distance operator for fast similarity search. Pre-build N-set nightly using ivfflat index. For 1000 attendees, ANN search (approximate nearest neighbors) reduces O(n²) to O(n log n)." />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── DEAL READY (PAIRWISE MIN) ───────────────────────────────────────
+      function DealReadyPanel() {
+        const [view, setView] = useState("fin");
+        return (
+          <div>
+            <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+              {[["fin","FinancialReady(A,B)"],["ops","OperationalReady(A,B)"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setView(k)}
+                  style={{ fontFamily:"DM Mono,monospace", fontSize:11, padding:"7px 14px", borderRadius:6, border:`1px solid ${view===k?"#00e5a0":C.border}`, background:view===k?"rgba(0,229,160,.08)":C.surface, color:view===k?"#00e5a0":C.dim, cursor:"pointer" }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <ScoreShell
+              tag={`Agent 2 · Pairwise · ${view==="fin"?"FinancialReady":"OperationalReady"}`}
+              name={view==="fin" ? "FinancialReady(A, B) = min(fin_A, fin_B)" : "OperationalReady(A, B) = min(ops_A, ops_B)"}
+              method="MinMax"
+              def={view==="fin"
+                ? "The pairwise capital transaction readiness score — the MINIMUM of both individual fin_ready scores. If one side is not ready to transact capital, the pair is not ready regardless of the other side. Used in RankScore (γ=fin) and P1/PILOT bucket gates."
+                : "The pairwise pilot/sandbox readiness score — the MINIMUM of both individual ops_ready scores. If one side lacks operational capacity for a pilot, the pair cannot execute one. Used in RankScore (γ=ops) and PILOT bucket gate."}>
+              <TwoCol>
+                <div>
+                  <Sub text="Input Fields" />
+                  <FieldTable fields={[
+                    { name:`${view==="fin"?"fin":"ops"}_ready_score_A`, type:"float", src:"Cached Agent 1 output", req:true },
+                    { name:`${view==="fin"?"fin":"ops"}_ready_score_B`, type:"float", src:"Cached Agent 1 output", req:true },
+                  ]} />
+                  <Sub text="Implementation (Python)" />
+                  <SyntaxCode lang="python">{`def financial_ready(fin_a: float, fin_b: float) -> float:
+    """
+    Pairwise capital readiness = min of both individual scores.
+    Logic: capital transaction requires BOTH parties ready.
+    The weaker side determines the pair's readiness.
+    """
+    return round(min(fin_a, fin_b), 4)
+
+def operational_ready(ops_a: float, ops_b: float) -> float:
+    """
+    Pairwise pilot readiness = min of both.
+    Same logic: a pilot requires both parties operationally capable.
+    """
+    return round(min(ops_a, ops_b), 4)
+
+# Computed independently — NEVER averaged or combined
+# before bucket assignment.
+
+# Amara × James:
+# FR = min(0.91, 0.55) = 0.55   ← James pulls it down
+# OR = min(0.70, 0.82) = 0.70   ← Amara limits it
+
+# Amara × Marcus:
+# FR = min(0.91, 0.90) = 0.90   ← both ready
+# OR = min(0.70, 0.75) = 0.70   ← Amara limits it`}</SyntaxCode>
+                  <Sub text="SQL Implementation (Production)" />
+                  <SyntaxCode lang="sql">{`-- Compute pairwise DealReady scores in one pass
+SELECT
+  a.id       AS attendee_a_id,
+  b.id       AS attendee_b_id,
+  LEAST(a.fin_ready_score, b.fin_ready_score) AS financial_ready,
+  LEAST(a.ops_ready_score, b.ops_ready_score) AS ops_ready
+FROM attendees a
+JOIN attendees b ON a.id < b.id  -- avoid duplicates
+WHERE a.event_id = b.event_id
+  AND a.id != b.id;`}</SyntaxCode>
+                </div>
+                <div>
+                  <Sub text="Output Schema" />
+                  <OutputBox schema={`// Amara × James
+{
+  "financial_ready": 0.55,   // min(0.91, 0.55) — James limits
+  "ops_ready": 0.70,          // min(0.70, 0.82) — Amara limits
+  "limiting_party_fin": "james",
+  "limiting_party_ops": "amara"
+}
+
+// Amara × Marcus
+{
+  "financial_ready": 0.90,  // both financially ready
+  "ops_ready": 0.70,         // Amara is operational limit
+}`} note="These two values are NEVER merged, averaged, or compared before bucket assignment. They flow independently to: (1) RankScore via γ, (2) Bucket rules separately." />
+                  <Sub text="When Used" />
+                  <UsedIn items={["RankScore: DealReady_B and DealReady_A via γ selection","Bucket P1: FinancialReady ≥ 0.70 gate","Bucket PILOT: OpsReady ≥ 0.65 AND FinancialReady < 0.70","Dashboard: displayed as separate fin/ops readiness bars"]} />
+                  <Sub text="Critical: Never Collapse" />
+                  <div style={{ background:"rgba(255,107,107,.06)", border:"1px solid rgba(255,107,107,.2)", borderRadius:7, padding:"11px 14px", fontSize:12, color:C.muted, lineHeight:1.7 }}>
+                    <span style={{ color:"#ff6b6b" }}>⚠ </span>FinancialReady and OperationalReady must remain independent columns through all pipeline stages. Averaging them (e.g. DealReady = avg(FR, OR)) would cause a pair with FR=0.10 and OR=0.90 to score avg=0.50 — appearing mid-range when the correct bucket is PILOT (ops-ready, not capital-ready).
+                  </div>
+                </div>
+              </TwoCol>
+            </ScoreShell>
+          </div>
+        );
+      }
+
+      // ─── MATCH SCORE ─────────────────────────────────────────────────────
+      function MatchPanel() {
+        return (
+          <ScoreShell tag="Agent 3 · Scoring Engine" name="MatchScore(A, B)" method="Composite"
+            def="Weighted sum of 6 pairwise components. Measures the quality of a potential connection in principle, independent of timing or actionability. Persona-specific weight vectors ensure each persona type gets a score relevant to their mandate.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"PersonaFit", type:"float", src:"Agent 2 lookup", req:true },
+                  { name:"IntentOverlap", type:"float", src:"Agent 2 LLM+embed", req:true },
+                  { name:"ThematicFit", type:"float", src:"Agent 2 Jaccard", req:true },
+                  { name:"ComplementaryScore", type:"float", src:"Agent 2 formula", req:true },
+                  { name:"NonObviousnessScore", type:"float", src:"Agent 2 embedding", req:true },
+                  { name:"CredibilityScore", type:"float", src:"Agent 2 avg()", req:true },
+                  { name:"persona_type_A", type:"enum", src:"Enriched profile", req:true },
+                ]} />
+                <Sub text="Implementation (Python)" />
+                <SyntaxCode lang="python">{`# Persona-specific weight vectors (from source W_DATA)
+MATCH_WEIGHTS = {
+    "investor": {
+        "pf": 0.30, "io": 0.25, "tf": 0.20,
+        "comp": 0.15, "no": 0.00, "cred": 0.10
+    },
+    "founder": {
+        "pf": 0.25, "io": 0.25, "tf": 0.20,
+        "comp": 0.15, "no": 0.05, "cred": 0.10
+    },
+    "regulator": {
+        "pf": 0.20, "io": 0.30, "tf": 0.30,
+        "comp": 0.10, "no": 0.00, "cred": 0.10
+    },
+}
+
+def match_score(
+    components: dict,
+    persona_type: str  # persona type of A (the requester)
+) -> float:
+    """
+    Weighted sum of 6 components.
+    persona_type = the persona whose perspective we're scoring from.
+    """
+    w = MATCH_WEIGHTS[persona_type.lower()]
+    score = (
+        w["pf"]   * components["persona_fit"] +
+        w["io"]   * components["intent_overlap"] +
+        w["tf"]   * components["thematic_fit"] +
+        w["comp"] * components["complementary_score"] +
+        w["no"]   * components["non_obviousness"] +
+        w["cred"] * components["credibility_score"]
+    )
+    return round(score, 4)`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`{
+  "match_score": 0.70,
+  "components": {
+    "persona_fit":           { "score": 0.85, "weight": 0.30, "contrib": 0.255 },
+    "intent_overlap":        { "score": 0.62, "weight": 0.25, "contrib": 0.155 },
+    "thematic_fit":          { "score": 0.55, "weight": 0.20, "contrib": 0.110 },
+    "complementary_score":   { "score": 0.67, "weight": 0.15, "contrib": 0.101 },
+    "non_obviousness_score": { "score": 0.55, "weight": 0.00, "contrib": 0.000 },
+    "credibility_score":     { "score": 0.74, "weight": 0.10, "contrib": 0.074 }
+  },
+  "persona_type": "investor"
+}`} />
+                <Sub text="When Used" />
+                <UsedIn items={["RankScore input (MS multiplier)","Bucket gate thresholds: P1/PILOT ≥ 0.70, P2 ≥ 0.65","Dashboard: component breakdown shown on match card"]} />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── RANK SCORE ──────────────────────────────────────────────────────
+      function RankPanel() {
+        return (
+          <ScoreShell tag="Agent 3 · Scoring Engine" name="RankScore(A, B)" method="Composite"
+            def="Applies an actionability boost to MatchScore based on how ready the counterparty (and self) are right now for this specific persona type. Controls ordering WITHIN a bucket — not the bucket itself. Persona-specific (α, β, γ) triplet.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"match_score", type:"float", src:"Agent 3 MatchScore output", req:true },
+                  { name:"financial_ready_pair", type:"float", src:"Agent 2 min(fin_A, fin_B)", req:true },
+                  { name:"ops_ready_pair", type:"float", src:"Agent 2 min(ops_A, ops_B)", req:true },
+                  { name:"fin_ready_self", type:"float", src:"Agent 1 individual score", req:true },
+                  { name:"ops_ready_self", type:"float", src:"Agent 1 individual score", req:true },
+                  { name:"alpha", type:"float", src:"Persona config", req:true },
+                  { name:"beta", type:"float", src:"Persona config", req:true },
+                  { name:"gamma", type:"enum[fin|ops|max]", src:"Persona config", req:true },
+                ]} />
+                <Sub text="Implementation (Python)" />
+                <SyntaxCode lang="python">{`# Persona RankScore configs (α, β, γ)
+RANK_CONFIG = {
+    "investor":  {"alpha": 0.60, "beta": 0.05, "gamma": "fin"},
+    "founder":   {"alpha": 0.50, "beta": 0.10, "gamma": "max"},
+    "regulator": {"alpha": 0.20, "beta": 0.05, "gamma": "ops"},
+}
+
+def select_deal_ready(
+    fr: float, ops: float, gamma: str
+) -> float:
+    """γ selects which DealReady dimension to use."""
+    if gamma == "fin":  return fr
+    if gamma == "ops":  return ops
+    return max(fr, ops)  # "max" for founders
+
+def rank_score(
+    ms: float,
+    fr_pair: float, ops_pair: float,  # pairwise
+    fr_self: float, ops_self: float,  # individual
+    persona_type: str
+) -> float:
+    cfg = RANK_CONFIG[persona_type]
+    alpha, beta, gamma = cfg["alpha"], cfg["beta"], cfg["gamma"]
+
+    # DealReady_B = counterparty readiness
+    dr_b = select_deal_ready(fr_pair, ops_pair, gamma)
+    # DealReady_A = self readiness
+    dr_a = select_deal_ready(fr_self, ops_self, gamma)
+
+    rs = ms * (1 + alpha * dr_b + beta * dr_a)
+    return round(rs, 4)`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="Output Schema" />
+                <OutputBox schema={`{
+  "rank_score": 1.507,
+  "match_score": 0.95,
+  "deal_ready_counterparty": 0.90,
+  "deal_ready_self": 0.91,
+  "alpha": 0.60, "beta": 0.05, "gamma": "fin",
+  "rank_position": 1
+}`} note="RankScore can exceed 1.0 — it's a ranking key, not a probability. Used for ordering within bucket only." />
+                <Sub text="Gamma Explained" />
+                <SyntaxCode lang="python">{`# γ = "fin"  → Investor
+# γ = "ops"  → Regulator
+# γ = "max"  → Founder`}</SyntaxCode>
+                <Sub text="When Used" />
+                <UsedIn items={["Ordering WITHIN each bucket (P1, PILOT, P2, P3)","Dashboard shortlist ranking — top-N per persona","NOT used for bucket assignment (FR and OR decide buckets)"]} />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── BUCKET ASSIGNMENT ──────────────────────────────────────────────
+      function BucketPanel() {
+        return (
+          <ScoreShell tag="Agent 4 · Bucket Assignment" name="Bucket Rules" method="SQL"
+            def="Pure deterministic rules applied to MatchScore, FinancialReady, and OperationalReady. No ML. Evaluated in order — first rule that matches wins. Stage flag is NOT used here.">
+            <TwoCol>
+              <div>
+                <Sub text="Input Fields" />
+                <FieldTable fields={[
+                  { name:"match_score", type:"float", src:"Agent 3", req:true },
+                  { name:"financial_ready", type:"float", src:"Agent 2 min()", req:true },
+                  { name:"ops_ready", type:"float", src:"Agent 2 min()", req:true },
+                ]} />
+                <Sub text="Python Implementation" />
+                <SyntaxCode lang="python">{`from enum import Enum
+
+class Bucket(str, Enum):
+    P1     = "P1"
+    PILOT  = "PILOT"
+    P2     = "P2"
+    P3     = "P3"
+
+def assign_bucket(
+    ms: float,
+    fr: float,
+    ops: float
+) -> Bucket:
+    if ms >= 0.70 and fr >= 0.70:
+        return Bucket.P1
+    if ms >= 0.70 and ops >= 0.65 and fr < 0.70:
+        return Bucket.PILOT
+    if ms >= 0.65 and max(fr, ops) >= 0.40:
+        return Bucket.P2
+    if ms >= 0.40:
+        return Bucket.P3
+    return None`}</SyntaxCode>
+              </div>
+              <div>
+                <Sub text="SQL Implementation" />
+                <SyntaxCode lang="sql">{`CREATE MATERIALIZED VIEW match_buckets AS
+SELECT
+  pair_id,
+  attendee_a_id,
+  attendee_b_id,
+  match_score,
+  financial_ready,
+  ops_ready,
+  rank_score,
+  CASE
+    WHEN match_score >= 0.70 
+      AND financial_ready >= 0.70
+    THEN 'P1'
+    WHEN match_score >= 0.70
+      AND ops_ready >= 0.65
+      AND financial_ready < 0.70
+    THEN 'PILOT'
+    WHEN match_score >= 0.65
+      AND GREATEST(financial_ready, ops_ready) >= 0.40
+    THEN 'P2'
+    WHEN match_score >= 0.40
+    THEN 'P3'
+    ELSE 'EXCLUDED'
+  END AS bucket;`}</SyntaxCode>
+                <Sub text="When Used" />
+                <UsedIn items={["Final stage of pipeline — runs after all scores computed","Dashboard: organizer sees matches grouped by bucket","App: attendee sees their P1 + PILOT matches first","Stage flag NOT present in any bucket condition"]} />
+              </div>
+            </TwoCol>
+          </ScoreShell>
+        );
+      }
+
+      // ─── STAGE FLAG ─────────────────────────────────────────────────────
+      function StagePanel() {
+        const rows = [
+          { score:"fin_ready_score", agent:"Agent 1", role:"CONTEXT INPUT to LLM prompt", how:"Stage included as context field. LLM uses it to interpret fundraising_status: 'Series A not actively raising' → lower fin_ready than 'Series B actively raising'. Does not directly set a score range.", flag:"⚡ LLM context" },
+          { score:"credibility_score", agent:"Agent 1", role:"CONTEXT INPUT to rubric", how:"Stage mentioned in system prompt context. LLM calibrates what 'institutional clients' means at Seed vs Series B. High-traction Seed still outscores low-traction Series B.", flag:"⚡ LLM context" },
+          { score:"C-set pre-filter", agent:"Agent 2", role:"OPTIONAL eligibility gate", how:"Organizer can configure: 'minimum Series A for P1 pool'. This is a configuration option, not hardcoded. Filters which attendees enter full scoring.", flag:"⚙ Optional config" },
+          { score:"PersonaFit", agent:"Agent 2", role:"NOT USED", how:"Stage is not an input to PersonaFit. Lookup only uses persona_type.", flag:"✗ not used" },
+          { score:"ThematicFit", agent:"Agent 2", role:"NOT USED", how:"Tag-based. Stage is not a tag.", flag:"✗ not used" },
+          { score:"IntentOverlap", agent:"Agent 2", role:"IMPLICIT only", how:"Stage may appear in the registration free-text that gets intent-extracted, but it's not a structured field input.", flag:"~ implicit" },
+          { score:"ComplementaryScore", agent:"Agent 2", role:"NOT USED", how:"Formula of PF + IO + TF. Stage does not appear.", flag:"✗ not used" },
+          { score:"NonObviousnessScore", agent:"Agent 2", role:"IMPLICIT only", how:"Stage may appear in enriched profile text that generates the embedding, but not as a structured penalty or boost.", flag:"~ implicit" },
+          { score:"MatchScore", agent:"Agent 3", role:"NOT USED", how:"Stage is not a component or weight in MatchScore. Explicitly excluded to avoid stage-label bias.", flag:"✗ not used" },
+          { score:"RankScore", agent:"Agent 3", role:"NOT USED", how:"RankScore uses FinancialReady and OpsReady (which reflect real signals, not stage labels). Stage does not appear in the formula.", flag:"✗ not used" },
+          { score:"Bucket Assignment", agent:"Agent 4", role:"NOT USED", how:"Bucket gates use MatchScore, FinancialReady, OpsReady. Stage is never a gate condition.", flag:"✗ not used" },
+        ];
+        const flagColor = f => f.startsWith("✗")?"#ff6b6b":f.startsWith("~")?"#f5a623":f.startsWith("⚡")?"#a78bfa":"#00e5a0";
+
+        return (
+          <div>
+            <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:"#f5a623", textTransform:"uppercase", letterSpacing:".18em", marginBottom:6 }}>Cross-Cutting Signal</div>
+            <h2 style={{ fontFamily:"Syne,sans-serif", fontSize:24, fontWeight:700, color:C.text, marginBottom:6 }}>Stage Flag — Complete Usage Map</h2>
+            <p style={{ fontSize:13, color:C.muted, lineHeight:1.75, marginBottom:20 }}>
+              Stage (Seed / Series A / Series B / Growth) appears in two places as LLM context, optionally in one pre-filter, and nowhere else. It is deliberately excluded from all scoring formulas and bucket gates to avoid stage-label bias.
+            </p>
+
+            <div style={{ overflowX:"auto", marginBottom:20 }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                <thead>
+                  <tr>{["Score / Step","Agent","Role","How stage is used","Flag"].map(h=>(
+                    <th key={h} style={{ background:"#0a0a18", color:C.dim, padding:"9px 12px", border:`1px solid ${C.border}`, textAlign:"left", fontFamily:"DM Mono,monospace", fontSize:10 }}>{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {rows.map((r,i)=>(
+                    <tr key={i} style={{ background: i%2===0?"#0f0f1a":"#0a0a18" }}>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, fontFamily:"DM Mono,monospace", color:"#00e5a0", fontSize:11 }}>{r.score}</td>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, color:"#a78bfa", fontFamily:"DM Mono,monospace", fontSize:11 }}>{r.agent}</td>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, color: r.role.includes("NOT")?"#ff6b6b":r.role.includes("IMPLICIT")?"#f5a623":"#00e5a0", fontSize:11.5, fontFamily:"DM Mono,monospace" }}>{r.role}</td>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, color:C.muted, fontSize:12, lineHeight:1.55 }}>{r.how}</td>
+                      <td style={{ padding:"8px 12px", border:`1px solid ${C.border}`, fontFamily:"DM Mono,monospace", fontSize:11, color:flagColor(r.flag) }}>{r.flag}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      }
+
+      // (Explainer panel and related helper components would follow here —
+      // omitted for brevity if you don't need that section rendered.)
+
+      // ─── TABS ────────────────────────────────────────────────────────────
+      const TABS = [
+        { id:"pipeline", label:"01 · Pipeline Map" },
+        { id:"cred",     label:"02 · Credibility Score" },
+        { id:"ready",    label:"03 · fin_ready / ops_ready" },
+        { id:"pf",       label:"04 · PersonaFit" },
+        { id:"tf",       label:"05 · ThematicFit" },
+        { id:"io",       label:"06 · IntentOverlap" },
+        { id:"comp",     label:"07 · ComplementaryScore" },
+        { id:"no",       label:"08 · NonObviousnessScore" },
+        { id:"dr",       label:"09 · FinancialReady + OpsReady" },
+        { id:"ms",       label:"10 · MatchScore" },
+        { id:"rs",       label:"11 · RankScore" },
+        { id:"bkt",      label:"12 · Bucket Assignment" },
+        { id:"stage",    label:"13 · Stage Flag" },
+      ];
+
+      function App() {
+        const [tab, setTab] = useState("pipeline");
+        const panels = {
+          pipeline: <PipelinePanel />,
+          cred:     <CredPanel />,
+          ready:    <ReadyPanel />,
+          pf:       <PersonaFitPanel />,
+          tf:       <ThematicPanel />,
+          io:       <IntentPanel />,
+          comp:     <CompPanel />,
+          no:       <NoPanel />,
+          dr:       <DealReadyPanel />,
+          ms:       <MatchPanel />,
+          rs:       <RankPanel />,
+          bkt:      <BucketPanel />,
+          stage:    <StagePanel />,
+        };
+
+        return (
+          <div style={{ fontFamily:"'Instrument Sans','Helvetica Neue',sans-serif", background:C.bg, minHeight:"100vh", color:C.text }}>
+            <style>{`
+              @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+              *{box-sizing:border-box;margin:0;padding:0}
+              body{background:#07070f}
+              ::-webkit-scrollbar{width:4px;height:4px}
+              ::-webkit-scrollbar-track{background:#0f0f1a}
+              ::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:4px}
+              input[type=range]{-webkit-appearance:none;width:100%;height:3px;border-radius:2px;background:#1e1e38;cursor:pointer}
+              input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#00e5a0;cursor:pointer}
+              code{font-family:'DM Mono',monospace;font-size:11px;color:#00e5a0}
+            `}</style>
+
+            {/* Header with updated branding */}
+            <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, position:"sticky", top:0, zIndex:100 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:11, padding:"11px 24px 0" }}>
+                <div style={{ width:26, height:26, background:"linear-gradient(135deg,#00e5a0,#6c63ff)", borderRadius:5, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <span style={{ color:"#07070f", fontSize:12, fontWeight:800, fontFamily:"Syne,sans-serif" }}>P</span>
+                </div>
+                <div>
+                  <div style={{ fontFamily:"Syne,sans-serif", fontSize:13, fontWeight:700, color:C.text }}>Proof of Match · Implementation Pipeline</div>
+                  <div style={{ fontFamily:"DM Mono,monospace", fontSize:9.5, color:C.dim }}>All scores: definition · input fields · implementation (Python/SQL/LLM prompt) · POC vs production · stage flag map</div>
+                </div>
+              </div>
+              <div style={{ display:"flex", overflowX:"auto", padding:"0 12px" }}>
+                {TABS.map(t=>(
+                  <button key={t.id} onClick={()=>setTab(t.id)}
+                    style={{ fontFamily:"DM Mono,monospace", fontSize:10, padding:"8px 12px", border:"none", background:"transparent", color:tab===t.id?"#00e5a0":C.dim, cursor:"pointer", borderBottom:`2px solid ${tab===t.id?"#00e5a0":"transparent"}`, whiteSpace:"nowrap", transition:"color .12s", flexShrink:0 }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ maxWidth:980, margin:"0 auto", padding:"28px 36px 80px" }}>
+              {panels[tab]}
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
